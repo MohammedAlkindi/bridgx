@@ -51,7 +51,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                   textDecoration: "none",
                   fontWeight: 700,
                   fontSize: 20,
-                  letterSpacing: "-0.4px",
+                  letterSpacing: "-0.5px",
                 }}
               >
                 BridgX
@@ -68,7 +68,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               </span>
               <span
                 style={{
-                  color: "#4a5a8a",
+                  color: "#5a6d9a",
                   fontSize: 13,
                   fontWeight: 400,
                 }}
