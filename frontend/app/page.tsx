@@ -4,7 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import BridgeWidget from "../components/BridgeWidget";
 import WalletButton from "../components/WalletButton";
-import { getBtcUsdRate, getNetworks, getQuote, getTokenBalance, getTokens, initiateBridge } from "../lib/api";
+import {
+  getNetworks,
+  getQuote,
+  getTokenBalance,
+  getTokenPrice,
+  getTokens,
+  initiateBridge,
+} from "../lib/api";
 import { connectMetaMask, isValidEvmAddress, type WalletState } from "../lib/wallet";
 import {
   SUPPORTED_CHAINS,
@@ -87,10 +94,6 @@ function getFieldErrors(
   if (sourceChain === destinationChain) {
     errors.destinationChain = "Must differ from source chain.";
   }
-  const sats = Number(amountSats);
-  if (amountSats !== "" && (!Number.isFinite(sats) || sats <= 0)) {
-    errors.amountSats = "Enter a positive token amount.";
-  }
   if (recipientAddress !== "" && !isValidEvmAddress(recipientAddress)) {
     errors.recipientAddress = "Enter a valid 0x\u2026 address.";
   }
@@ -131,17 +134,10 @@ export default function HomePage() {
   const [quote, setQuote] = useState<QuoteResponse | undefined>();
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [usdRate, setUsdRate] = useState<number | undefined>();
+  const [tokenUsdPrice, setTokenUsdPrice] = useState<number | undefined>();
   const [walletBalanceTokens, setWalletBalanceTokens] = useState<string | undefined>();
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Fetch BTC/USD rate once on mount; silently ignore failures
-  useEffect(() => {
-    getBtcUsdRate()
-      .then(setUsdRate)
-      .catch(() => undefined);
-  }, []);
 
   useEffect(() => {
     getNetworks()
@@ -264,6 +260,18 @@ export default function HomePage() {
   const sourceTokenInfo = sourceTokenOptions.find((token) => tokenLabel(token) === sourceToken);
 
   useEffect(() => {
+    if (!sourceTokenInfo) {
+      setTokenUsdPrice(undefined);
+      return;
+    }
+    getTokenPrice(sourceTokenInfo.address, sourceTokenInfo.chain_id)
+      .then((price) => {
+        setTokenUsdPrice(Number.isFinite(price) && price > 0 ? price : undefined);
+      })
+      .catch(() => setTokenUsdPrice(undefined));
+  }, [sourceTokenInfo?.address, sourceTokenInfo?.chain_id]);
+
+  useEffect(() => {
     if (!wallet.address || !sourceTokenInfo) {
       setWalletBalanceTokens(undefined);
       return;
@@ -319,7 +327,7 @@ export default function HomePage() {
       const scaledAmount = parseScaledAmount(amountSats);
       if (!scaledAmount) {
         setLoading(false);
-        setErrorMessage("Enter a valid token amount.");
+        setQuote(undefined);
         return;
       }
       getQuote({
@@ -456,7 +464,7 @@ export default function HomePage() {
           infoMessage={!wallet.address ? "Connect your wallet to get a live quote." : undefined}
           errorMessage={wallet.address ? errorMessage || undefined : undefined}
           walletBalanceTokens={wallet.status === "connected" ? walletBalanceTokens : undefined}
-          usdRate={usdRate}
+          tokenUsdPrice={tokenUsdPrice}
           onSourceChainChange={(chain) => {
             setSourceChain(chain);
             setQuote(undefined);

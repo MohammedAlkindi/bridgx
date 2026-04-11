@@ -27,7 +27,7 @@ type BridgeWidgetProps = {
   /** Error message — quote failure, bridge error, etc. */
   errorMessage?: string;
   walletBalanceTokens?: string;
-  usdRate?: number;
+  tokenUsdPrice?: number;
   onSourceChainChange: (chain: SupportedChain) => void;
   onDestinationChainChange: (chain: SupportedChain) => void;
   onSourceTokenChange: (token: string) => void;
@@ -59,8 +59,8 @@ function formatExpiry(iso: string): string {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-function tokenToUsd(amount: number, usdPerBtc: number): string {
-  return (amount * usdPerBtc).toLocaleString("en-US", {
+function tokenToUsd(amount: number, usdPerToken: number): string {
+  return (amount * usdPerToken).toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: 2,
@@ -107,7 +107,7 @@ export default function BridgeWidget({
   infoMessage,
   errorMessage,
   walletBalanceTokens,
-  usdRate,
+  tokenUsdPrice,
   onSourceChainChange,
   onDestinationChainChange,
   onSourceTokenChange,
@@ -125,13 +125,17 @@ export default function BridgeWidget({
     : "Select token";
 
   const amountNum = Number(amountSats);
-  const showUsd = usdRate !== undefined && sourceToken.toUpperCase().includes("BTC");
+  const showUsd = tokenUsdPrice !== undefined;
   const amountUsd = showUsd && amountSats && Number.isFinite(amountNum) && amountNum > 0
-    ? tokenToUsd(amountNum, usdRate!)
+    ? tokenToUsd(amountNum, tokenUsdPrice!)
     : null;
 
-  const balanceUsd = showUsd && walletBalanceTokens !== undefined
-    ? tokenToUsd(Number(walletBalanceTokens), usdRate!)
+  const sameToken = destinationToken === sourceToken;
+  const sourceQuoteUsd = showUsd && quote
+    ? tokenToUsd(Number(formatScaledAmount(quote.sourceAmountSats)), tokenUsdPrice!)
+    : null;
+  const destinationQuoteUsd = showUsd && quote && sameToken
+    ? tokenToUsd(Number(formatScaledAmount(quote.destinationAmountSats)), tokenUsdPrice!)
     : null;
 
   return (
@@ -167,7 +171,9 @@ export default function BridgeWidget({
               className="w-full rounded-lg border border-[#1e2d5a] bg-[#090e1f] px-3 py-2.5 text-sm text-[#e2e8ff] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20"
             >
               {chainOptions.map((chain) => (
-                <option key={chain} value={chain}>{CHAIN_LABELS[chain]}</option>
+                <option key={chain} value={chain} disabled={chain === destinationChain}>
+                  {CHAIN_LABELS[chain]}
+                </option>
               ))}
             </select>
             {fieldErrors?.sourceChain && (
@@ -215,7 +221,9 @@ export default function BridgeWidget({
               className="w-full rounded-lg border border-[#1e2d5a] bg-[#090e1f] px-3 py-2.5 text-sm text-[#e2e8ff] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20"
             >
               {chainOptions.map((chain) => (
-                <option key={chain} value={chain}>{CHAIN_LABELS[chain]}</option>
+                <option key={chain} value={chain} disabled={chain === sourceChain}>
+                  {CHAIN_LABELS[chain]}
+                </option>
               ))}
             </select>
             {fieldErrors?.destinationChain && (
@@ -318,21 +326,28 @@ export default function BridgeWidget({
             </div>
           </div>
 
-          {/* Balance + USD hint */}
+          {/* USD + Balance */}
           <div className="mt-1.5 flex items-center justify-between text-xs">
+            {amountUsd ? (
+              <span className="text-[#5a6d9a]">≈ {amountUsd}</span>
+            ) : (
+              <span />
+            )}
             {walletBalanceTokens !== undefined ? (
               <span className="text-[#3d5070]">
                 Balance:{" "}
                 <span className="text-[#5a6d9a]">
                   {walletBalanceTokens} {sourceToken || ""}
                 </span>
-                {balanceUsd && <span className="text-[#3d5070]"> ≈ {balanceUsd}</span>}
+                {showUsd && walletBalanceTokens && (
+                  <span className="text-[#3d5070]">
+                    {" "}
+                    ≈ {tokenToUsd(Number(walletBalanceTokens), tokenUsdPrice!)}
+                  </span>
+                )}
               </span>
             ) : (
               <span />
-            )}
-            {amountUsd && (
-              <span className="text-[#5a6d9a]">≈ {amountUsd}</span>
             )}
           </div>
 
@@ -384,9 +399,9 @@ export default function BridgeWidget({
                 <span className="text-sm text-[#5a6d9a]">You send</span>
                 <span className="text-sm font-medium text-[#e2e8ff]">
                   {formatScaledAmount(quote.sourceAmountSats)} {sourceToken || ""}
-                  {showUsd && (
+                  {sourceQuoteUsd && (
                     <span className="ml-1.5 text-xs text-[#4a5a8a]">
-                      ({tokenToUsd(Number(formatScaledAmount(quote.sourceAmountSats)), usdRate!)})
+                      ({sourceQuoteUsd})
                     </span>
                   )}
                 </span>
@@ -395,9 +410,9 @@ export default function BridgeWidget({
                 <span className="text-sm text-[#5a6d9a]">You receive</span>
                 <span className="text-sm font-medium text-emerald-400">
                   {formatScaledAmount(quote.destinationAmountSats)} {destinationToken || ""}
-                  {showUsd && (
+                  {destinationQuoteUsd && (
                     <span className="ml-1.5 text-xs text-emerald-700">
-                      ({tokenToUsd(Number(formatScaledAmount(quote.destinationAmountSats)), usdRate!)})
+                      ({destinationQuoteUsd})
                     </span>
                   )}
                 </span>
