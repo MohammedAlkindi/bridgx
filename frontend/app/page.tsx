@@ -114,14 +114,12 @@ function getFieldErrors(
 }
 
 function isFormComplete(
-  walletAddress: string | undefined,
   sourceChain: SupportedChain,
   destinationChain: SupportedChain,
   amountSats: string,
   sourceToken: string,
   destinationToken: string,
 ): boolean {
-  if (!walletAddress) return false;
   if (sourceChain === destinationChain) return false;
   if (!sourceToken || !destinationToken) return false;
   const sats = Number(amountSats);
@@ -334,17 +332,19 @@ export default function HomePage() {
 
   const fieldErrors = getFieldErrors(sourceChain, destinationChain);
   const hasErrors = Object.keys(fieldErrors).length > 0;
-  const formComplete = isFormComplete(
-    wallet.address,
+  const quoteReady = isFormComplete(
     sourceChain,
     destinationChain,
     amountSats,
     sourceToken,
     destinationToken,
   );
+  const canSubmit = wallet.address ? quoteReady && !!quote : true;
+  const ctaLabel = wallet.address ? "Bridge" : "Connect wallet";
+  const ctaVariant = wallet.address ? "green" : "orange";
 
   const fetchQuote = useCallback(async () => {
-    if (!formComplete) {
+    if (!quoteReady) {
       setLoading(false);
       setQuote(undefined);
       return;
@@ -358,6 +358,7 @@ export default function HomePage() {
 
     setLoading(true);
     setErrorMessage("");
+    const walletAddress = wallet.address ?? "0x0000000000000000000000000000000000000000";
     try {
       const result = await getQuote({
         sourceChain,
@@ -365,7 +366,7 @@ export default function HomePage() {
         sourceToken,
         destinationToken,
         amountSats: scaledAmount,
-        walletAddress: wallet.address!,
+        walletAddress,
       });
       setQuote(result);
     } catch (err) {
@@ -378,7 +379,7 @@ export default function HomePage() {
     amountSats,
     destinationChain,
     destinationToken,
-    formComplete,
+    quoteReady,
     sourceChain,
     sourceToken,
     wallet.address,
@@ -386,7 +387,7 @@ export default function HomePage() {
 
   // Auto-fetch quote whenever the form becomes complete and valid
   useEffect(() => {
-    if (!formComplete) {
+    if (!quoteReady) {
       setLoading(false);
       setQuote(undefined);
       return;
@@ -400,7 +401,7 @@ export default function HomePage() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [fetchQuote, formComplete]);
+  }, [fetchQuote, quoteReady]);
 
   const handleRefreshQuote = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -431,15 +432,23 @@ export default function HomePage() {
       setDestinationChain(prev);
       return destinationChain;
     });
+    setSourceToken((prev) => {
+      setDestinationToken(prev);
+      return destinationToken;
+    });
     setQuote(undefined);
-  }, [destinationChain]);
+  }, [destinationChain, destinationToken]);
 
   const handleSubmit = useCallback(async () => {
     if (!wallet.address) {
       setErrorMessage("Connect your wallet to continue.");
       return;
     }
-    if (!formComplete || !quote) return;
+    if (!wallet.address) {
+      await handleConnect();
+      return;
+    }
+    if (!quoteReady || !quote) return;
 
     setLoading(true);
     setErrorMessage("");
@@ -453,7 +462,7 @@ export default function HomePage() {
       setErrorMessage(err instanceof Error ? err.message : "Bridge initiation failed.");
       setLoading(false);
     }
-  }, [wallet.address, formComplete, quote, router]);
+  }, [handleConnect, quoteReady, quote, router, wallet.address]);
 
   return (
     <section>
@@ -503,17 +512,19 @@ export default function HomePage() {
           sourceTokenOptions={sourceTokenOptions}
           destinationTokenOptions={destinationTokenOptions}
           quote={quote}
-          ctaLabel="Bridge"
+          ctaLabel={ctaLabel}
+          ctaVariant={ctaVariant}
           loading={loading}
-          canSubmit={formComplete && !!quote}
+          canSubmit={canSubmit}
           fieldErrors={hasErrors ? fieldErrors : undefined}
-          infoMessage={!wallet.address ? "Connect your wallet to get a live quote." : undefined}
+          infoMessage={undefined}
           errorMessage={wallet.address ? errorMessage || undefined : undefined}
           walletBalanceTokens={wallet.status === "connected" ? walletBalanceTokens : undefined}
           tokenUsdPrice={tokenUsdPrice}
           destinationTokenUsdPrice={destinationTokenUsdPrice}
           onRefreshQuote={handleRefreshQuote}
-          canRefresh={formComplete}
+          canRefresh={quoteReady}
+          isWalletConnected={!!wallet.address}
           onSourceChainChange={(chain) => {
             setSourceChain(chain);
             setQuote(undefined);
