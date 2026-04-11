@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import BridgeWidget from "../components/BridgeWidget";
 import WalletButton from "../components/WalletButton";
 import { getBtcUsdRate, getQuote, getTokens, initiateBridge } from "../lib/api";
-import { generateMockEvmAddress, isValidEvmAddress, type WalletState } from "../lib/wallet";
+import { connectMetaMask, isValidEvmAddress, type WalletState } from "../lib/wallet";
 import { SUPPORTED_CHAINS, type QuoteResponse, type SupportedChain, type TokenInfo } from "../types";
 
 const QUOTE_DEBOUNCE_MS = 600;
@@ -181,11 +181,15 @@ export default function HomePage() {
     formComplete,
   ]);
 
-  const handleConnect = useCallback(() => {
+  const handleConnect = useCallback(async () => {
     setWallet({ status: "connecting" });
-    setTimeout(() => {
-      setWallet({ status: "connected", address: generateMockEvmAddress() });
-    }, 600);
+    try {
+      const address = await connectMetaMask();
+      setWallet({ status: "connected", address });
+    } catch (err) {
+      setWallet({ status: "disconnected" });
+      setErrorMessage(err instanceof Error ? err.message : "Failed to connect wallet.");
+    }
   }, []);
 
   const handleDisconnect = useCallback(() => {
@@ -223,27 +227,33 @@ export default function HomePage() {
     }
   }, [wallet.address, formComplete, quote, router]);
 
-  const displayError = !wallet.address
-    ? "Connect your wallet to get a quote."
-    : errorMessage;
-
   return (
     <section>
       <div style={{ maxWidth: 560, margin: "0 auto" }}>
+        {/* Page header row */}
         <div
           style={{
-            marginBottom: 24,
+            marginBottom: 28,
             display: "flex",
             justifyContent: "space-between",
             alignItems: "flex-start",
           }}
         >
           <div>
-            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: "#f0f4ff", letterSpacing: "-0.5px", lineHeight: 1.2 }}>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: 24,
+                fontWeight: 700,
+                color: "#f0f4ff",
+                letterSpacing: "-0.5px",
+                lineHeight: 1.2,
+              }}
+            >
               Bridge BTC
             </h1>
-            <p style={{ margin: "5px 0 0", fontSize: 13, color: "#6b7db3", fontWeight: 400 }}>
-              Cross-chain in ~2 min, verified on-chain
+            <p style={{ margin: "5px 0 0", fontSize: 13, color: "#5a6d9a", fontWeight: 400, lineHeight: 1.5 }}>
+              Transfer wrapped BTC across Ethereum L2s — no custodians, verified on-chain.
             </p>
           </div>
           <WalletButton
@@ -254,6 +264,7 @@ export default function HomePage() {
           />
         </div>
 
+        {/* Bridge widget */}
         <BridgeWidget
           sourceChain={sourceChain}
           destinationChain={destinationChain}
@@ -269,7 +280,8 @@ export default function HomePage() {
           loading={loading}
           canSubmit={formComplete && !!quote}
           fieldErrors={hasErrors ? fieldErrors : undefined}
-          errorMessage={displayError}
+          infoMessage={!wallet.address ? "Connect your wallet to get a live quote." : undefined}
+          errorMessage={wallet.address ? errorMessage || undefined : undefined}
           walletBalanceSats={wallet.status === "connected" ? MOCK_WALLET_BALANCE_SATS : undefined}
           usdRate={usdRate}
           onSourceChainChange={(chain) => {
@@ -297,9 +309,10 @@ export default function HomePage() {
           onSubmit={handleSubmit}
         />
 
+        {/* Trust badges */}
         <div
           style={{
-            marginTop: 20,
+            marginTop: 18,
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
@@ -307,61 +320,60 @@ export default function HomePage() {
             flexWrap: "wrap",
           }}
         >
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 5,
-              padding: "4px 10px",
-              borderRadius: 6,
-              border: "1px solid #1e2d5a",
-              background: "#0d1326",
-              fontSize: 11,
-              fontWeight: 500,
-              color: "#7a90b8",
-              letterSpacing: "0.02em",
-            }}
-          >
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#334060", display: "inline-block", flexShrink: 0 }} />
-            0% bridge fee
-          </span>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 5,
-              padding: "4px 10px",
-              borderRadius: 6,
-              border: "1px solid #1e2d5a",
-              background: "#0d1326",
-              fontSize: 11,
-              fontWeight: 500,
-              color: "#7a90b8",
-              letterSpacing: "0.02em",
-            }}
-          >
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#334060", display: "inline-block", flexShrink: 0 }} />
-            ~2 min settlement
-          </span>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 5,
-              padding: "4px 10px",
-              borderRadius: 6,
-              border: "1px solid #1e2d5a",
-              background: "#0d1326",
-              fontSize: 11,
-              fontWeight: 500,
-              color: "#7a90b8",
-              letterSpacing: "0.02em",
-            }}
-          >
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#334060", display: "inline-block", flexShrink: 0 }} />
-            On-chain proof
-          </span>
+          {[
+            { label: "0% bridge fee" },
+            { label: "~2 min settlement" },
+            { label: "On-chain proof" },
+            { label: "Non-custodial" },
+          ].map(({ label }) => (
+            <span
+              key={label}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "4px 10px",
+                borderRadius: 6,
+                border: "1px solid #1a2240",
+                background: "#0d1326",
+                fontSize: 11,
+                fontWeight: 500,
+                color: "#6b7db3",
+                letterSpacing: "0.01em",
+              }}
+            >
+              <span
+                style={{
+                  width: 4,
+                  height: 4,
+                  borderRadius: "50%",
+                  background: "#2e4060",
+                  display: "inline-block",
+                  flexShrink: 0,
+                }}
+                aria-hidden="true"
+              />
+              {label}
+            </span>
+          ))}
         </div>
+
+        {/* Protocol attribution */}
+        <p
+          style={{
+            marginTop: 14,
+            textAlign: "center",
+            fontSize: 11,
+            color: "#3d5070",
+            lineHeight: 1.5,
+          }}
+        >
+          Routing via{" "}
+          <span style={{ color: "#4a6080" }}>Odos</span>
+          {" · "}
+          Cross-chain settlement via{" "}
+          <span style={{ color: "#4a6080" }}>Circle CCTP</span>
+        </p>
       </div>
     </section>
   );

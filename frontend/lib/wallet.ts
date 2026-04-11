@@ -11,11 +11,27 @@ export function isValidEvmAddress(address: string): boolean {
   return EVM_ADDRESS_REGEX.test(address.trim());
 }
 
-export function generateMockEvmAddress(): `0x${string}` {
-  const bytes = Array.from(crypto.getRandomValues(new Uint8Array(20)));
-  const hex = bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("");
+export async function connectMetaMask(): Promise<`0x${string}`> {
+  if (typeof window === "undefined" || !("ethereum" in window)) {
+    throw new Error("MetaMask is not installed. Please install the MetaMask browser extension.");
+  }
 
-  return `0x${hex}`;
+  const ethereum = window.ethereum as {
+    request: (args: { method: string }) => Promise<string[]>;
+  };
+
+  const accounts = await ethereum.request({ method: "eth_requestAccounts" });
+
+  if (!accounts || accounts.length === 0) {
+    throw new Error("No accounts returned from MetaMask.");
+  }
+
+  const address = accounts[0];
+  if (!isValidEvmAddress(address)) {
+    throw new Error("Invalid address returned from MetaMask.");
+  }
+
+  return address as `0x${string}`;
 }
 
 export function shortenWalletAddress(address: string, start = 6, end = 4): string {
@@ -46,12 +62,4 @@ export function createDemoWalletState(address?: string): WalletState {
     status: "connected",
     address,
   };
-}
-
-export function getConnectableAddress(address?: string): `0x${string}` {
-  if (address && isValidEvmAddress(address)) {
-    return address as `0x${string}`;
-  }
-
-  return generateMockEvmAddress();
 }
