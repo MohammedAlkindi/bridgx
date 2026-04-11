@@ -666,6 +666,7 @@ export default function HomePage() {
       });
 
       let attestation;
+      let isSettled = false;
       for (let attempt = 0; attempt < 6; attempt += 1) {
         attestation = await requestAttestation({
           sourceTxHash: txHash as TxHash,
@@ -674,7 +675,12 @@ export default function HomePage() {
           pollAttempts: 1,
           pollIntervalS: 5,
         });
-        if (attestation.status === "complete" && attestation.destinationTxHash) {
+        isSettled =
+          (attestation.status === "complete" && !!attestation.destinationTxHash) ||
+          attestation.swapStatus === "confirmed" ||
+          attestation.releaseStatus === "confirmed" ||
+          !!attestation.swapTxHash;
+        if (isSettled) {
           break;
         }
         const attnStatus = attestation.attestationStatus ? ` (${attestation.attestationStatus})` : "";
@@ -683,39 +689,53 @@ export default function HomePage() {
         await sleep(5000);
       }
 
-      if (!attestation || attestation.status !== "complete" || !attestation.destinationTxHash) {
+      if (!attestation || !isSettled) {
         setBridgeStatus("Attestation pending. Check again shortly.");
         return;
       }
 
-      const destinationTxHash = attestation.destinationTxHash as TxHash;
-      setDestinationTxHash(destinationTxHash);
+      const destinationTxHash = attestation.destinationTxHash as TxHash | undefined;
+      if (destinationTxHash) {
+        setDestinationTxHash(destinationTxHash);
+      }
       if (attestation.releaseTxHash) {
         setReleaseTxHash(attestation.releaseTxHash as TxHash);
       }
       if (attestation.swapTxHash) {
         setSwapTxHash(attestation.swapTxHash as TxHash);
       }
-      setBridgeStatus(`Destination tx submitted: ${destinationTxHash}`);
-
-      for (let attempt = 0; attempt < 30; attempt += 1) {
-        const receipt = await getReceipt({
-          txHash: destinationTxHash,
-          chain: destinationChain,
-        });
-        if (receipt.status === "pending") {
-          await sleep(5000);
-          continue;
-        }
-        if (receipt.status === "confirmed") {
-          setBridgeStatus(`Transfer complete. Destination tx: ${destinationTxHash}`);
-        } else {
-          setBridgeStatus("Transfer failed.");
-        }
-        return;
+      if (destinationTxHash) {
+        setBridgeStatus(`Destination tx submitted: ${destinationTxHash}`);
+      } else if (attestation.swapTxHash) {
+        setBridgeStatus(`Swap tx submitted: ${attestation.swapTxHash}`);
+      } else if (attestation.releaseTxHash) {
+        setBridgeStatus(`Payout tx submitted: ${attestation.releaseTxHash}`);
       }
 
-      setBridgeStatus(`Destination tx pending: ${destinationTxHash}`);
+      if (destinationTxHash) {
+        for (let attempt = 0; attempt < 30; attempt += 1) {
+          const receipt = await getReceipt({
+            txHash: destinationTxHash,
+            chain: destinationChain,
+          });
+          if (receipt.status === "pending") {
+            await sleep(5000);
+            continue;
+          }
+          if (receipt.status === "confirmed") {
+            setBridgeStatus(`Transfer complete. Destination tx: ${destinationTxHash}`);
+          } else {
+            setBridgeStatus("Transfer failed.");
+          }
+          return;
+        }
+
+        setBridgeStatus(`Destination tx pending: ${destinationTxHash}`);
+      } else if (attestation.swapTxHash) {
+        setBridgeStatus(`Transfer complete. Swap tx: ${attestation.swapTxHash}`);
+      } else if (attestation.releaseTxHash) {
+        setBridgeStatus(`Transfer complete. Payout tx: ${attestation.releaseTxHash}`);
+      }
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : "Bridge initiation failed.");
       setBridgeStatus(undefined);
