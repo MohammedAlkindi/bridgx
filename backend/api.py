@@ -106,6 +106,11 @@ class ProviderQuoteRequest(BaseModel):
     slippage_perc: float = Field(default=0.1, description="Max slippage percent")
 
 
+class TokenPriceRequest(BaseModel):
+    token_address: str = Field(..., description="Token contract address")
+    chain_id: int = Field(..., description="Chain ID")
+
+
 class AssembleRequest(BaseModel):
     quote: Dict[str, Any]
     wallet_address: str = Field(..., description="User wallet address")
@@ -205,6 +210,20 @@ def provider_quote(request: ProviderQuoteRequest) -> float:
         raise HTTPException(status_code=502, detail="Provider quote failed")
     return float(quote_data["outAmounts"][0]) / 10**request.token_out.decimals
 
+
+@app.post("/provider/token-price", response_model=float)
+def provider_token_price(request: TokenPriceRequest) -> float:
+    """Return the USD price for the given token."""
+    price = provider.get_token_price(
+        token_address=request.token_address,
+        chain_id=request.chain_id,
+    )
+    if price is None:
+        raise HTTPException(status_code=502, detail="Provider token price failed")
+    try:
+        return float(price)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=502, detail="Provider token price invalid")
 
 @app.post("/assemble", response_model=str)
 def assemble(request: AssembleRequest) -> str:

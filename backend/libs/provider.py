@@ -37,6 +37,7 @@ def get_quote(amount_in, token_in, token_out, wallet_address=None, slippage_perc
     if response.status_code == 200:
         return response.json()
     else:
+        ## todo: add proper logging here
         return None
 
 
@@ -63,4 +64,15 @@ def assemble(quote, wallet_address):
     else:
         ## todo: add proper logging here
         print(f"Failed to assemble tx:\n{str(response.json())}")
+        return None
+
+def get_token_price(token_address, chain_id):
+    url = f"https://api.odos.xyz/pricing/token/{chain_id}/{token_address}"
+    try:
+        response = requests.get(url, timeout=TIMEOUT_S)
+        response.raise_for_status()  # поднимет исключение при 4xx/5xx
+        return response.json().get("price")
+    except Exception as e:
+        ## todo: add proper logging here
+        print(f"Failed to get token price: {e}")
         return None
