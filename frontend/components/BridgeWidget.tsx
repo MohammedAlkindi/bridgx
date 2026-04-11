@@ -18,6 +18,7 @@ type BridgeWidgetProps = {
   destinationTokenOptions: readonly TokenInfo[];
   quote?: QuoteView;
   ctaLabel?: string;
+  ctaVariant?: "green" | "orange";
   loading?: boolean;
   canSubmit?: boolean;
   fieldErrors?: Partial<Record<"sourceChain" | "destinationChain" | "amountSats", string>>;
@@ -30,6 +31,7 @@ type BridgeWidgetProps = {
   destinationTokenUsdPrice?: number;
   onRefreshQuote: () => void;
   canRefresh?: boolean;
+  isWalletConnected?: boolean;
   onSourceChainChange: (chain: SupportedChain) => void;
   onDestinationChainChange: (chain: SupportedChain) => void;
   onSourceTokenChange: (token: string) => void;
@@ -93,6 +95,7 @@ export default function BridgeWidget({
   destinationTokenOptions,
   quote,
   ctaLabel = "Bridge BTC",
+  ctaVariant = "green",
   loading = false,
   canSubmit = true,
   fieldErrors,
@@ -103,6 +106,7 @@ export default function BridgeWidget({
   destinationTokenUsdPrice,
   onRefreshQuote,
   canRefresh = true,
+  isWalletConnected = false,
   onSourceChainChange,
   onDestinationChainChange,
   onSourceTokenChange,
@@ -128,6 +132,16 @@ export default function BridgeWidget({
     : `You send (${sourceChainLabel})`;
   const receiveLabel = `You receive on ${destinationChainLabel}`;
   const isRefreshDisabled = !canRefresh || loading;
+  const ctaClasses =
+    ctaVariant === "orange"
+      ? "bg-[#F7931A] hover:bg-[#e28512] active:bg-[#cc7810]"
+      : "bg-emerald-400 hover:bg-emerald-500 active:bg-emerald-600";
+  const accentTextClass = isWalletConnected ? "text-emerald-400" : "text-[#F7931A]";
+  const accentTextMutedClass = isWalletConnected ? "text-emerald-700" : "text-[#cc7810]";
+  const refreshHoverClass = isWalletConnected ? "hover:text-emerald-300" : "hover:text-[#ffb347]";
+  const swapAccentClass = isWalletConnected
+    ? "text-emerald-400 hover:text-emerald-300 hover:border-emerald-400/60"
+    : "text-[#F7931A] hover:text-[#ffb347] hover:border-[#F7931A]/60";
 
   return (
     <section className="w-full rounded-2xl border border-[#1e2a4a] bg-[#0f1630] shadow-xl" style={{ overflow: "hidden" }}>
@@ -179,7 +193,12 @@ export default function BridgeWidget({
               onClick={onSwapChains}
               aria-label="Swap source and destination chains"
               title="Swap chains"
-              className="inline-flex items-center justify-center w-[30px] h-[30px] rounded-[8px] border border-[#1e2d5a] bg-[#090e1f] text-[#3d5070] text-[14px] hover:border-[#F7931A]/60 hover:text-[#F7931A] transition-colors cursor-pointer"
+              className={[
+                "inline-flex items-center justify-center w-[30px] h-[30px] rounded-[8px] border border-[#1e2d5a] bg-[#090e1f] text-[14px] transition-colors cursor-pointer",
+                swapAccentClass,
+              ]
+                .filter(Boolean)
+                .join(" ")}
             >
               ⇄
             </button>
@@ -355,8 +374,8 @@ export default function BridgeWidget({
             aria-label="Update the quote"
             title="Update the quote"
             className={[
-              "inline-flex items-center justify-center rounded-full p-1 text-emerald-400",
-              isRefreshDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:text-emerald-300",
+              `inline-flex items-center justify-center rounded-full p-1 ${accentTextClass}`,
+              isRefreshDisabled ? "cursor-not-allowed opacity-50" : `cursor-pointer ${refreshHoverClass}`,
             ]
               .filter(Boolean)
               .join(" ")}
@@ -389,10 +408,10 @@ export default function BridgeWidget({
             <div className="divide-y divide-[#121d3a]">
               <div className="flex justify-between items-center px-4 py-2.5">
                 <span className="text-sm text-[#5a6d9a]">{receiveLabel}</span>
-                <span className="text-sm font-medium text-emerald-400">
+                <span className={`text-sm font-medium ${accentTextClass}`}>
                   {formatScaledAmount(quote.destinationAmountSats)} {destinationToken || ""}
                   {destinationQuoteUsd && (
-                    <span className="ml-1.5 text-xs text-emerald-700">
+                    <span className={`ml-1.5 text-xs ${accentTextMutedClass}`}>
                       ({destinationQuoteUsd})
                     </span>
                   )}
@@ -440,7 +459,13 @@ export default function BridgeWidget({
           onClick={onSubmit}
           disabled={isSubmitDisabled}
           aria-busy={loading}
-          className="w-full rounded-xl bg-emerald-400 px-4 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-emerald-500 active:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
+          className={[
+            "w-full rounded-xl px-4 py-3.5 text-[15px] font-semibold text-white transition-colors",
+            ctaClasses,
+            "disabled:cursor-not-allowed disabled:opacity-40",
+          ]
+            .filter(Boolean)
+            .join(" ")}
         >
           {loading ? (
             <span className="inline-flex items-center justify-center gap-2">
