@@ -77,13 +77,13 @@ export interface TransferStatusStreamEvent {
 }
 
 export const TRANSFER_STATUS_LABELS: Record<TransferStatus, string> = {
-  CREATED: "Created",
+  CREATED: "Transfer initiated",
   SOURCE_TX_SUBMITTED: "Source transaction submitted",
-  SOURCE_CONFIRMED: "Source confirmed",
-  ATTESTATION_PENDING: "Attestation pending",
-  ATTESTATION_READY: "Attestation ready",
-  DEST_TX_SUBMITTED: "Destination transaction submitted",
-  COMPLETED: "Completed",
+  SOURCE_CONFIRMED: "Source transaction confirmed",
+  ATTESTATION_PENDING: "Awaiting attestation",
+  ATTESTATION_READY: "Attestation confirmed",
+  DEST_TX_SUBMITTED: "Finalizing on destination",
+  COMPLETED: "Transfer complete",
   FAILED: "Failed",
   EXPIRED: "Expired",
 };
