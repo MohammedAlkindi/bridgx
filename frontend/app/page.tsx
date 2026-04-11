@@ -6,6 +6,7 @@ import BridgeWidget from "../components/BridgeWidget";
 import WalletButton from "../components/WalletButton";
 import {
   getNetworks,
+  getOutputAmount,
   getQuote,
   getTokenBalance,
   getTokenPrice,
@@ -50,6 +51,15 @@ function parseScaledAmount(input: string): string | null {
   return scaled.toString();
 }
 
+function parseAmountInput(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
+  const numeric = Number(trimmed);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  return trimmed;
+}
+
 function formatTokenBalance(raw: bigint, decimals: number, maxDecimals = 6): string {
   const divisor = 10n ** BigInt(decimals);
   const whole = raw / divisor;
@@ -62,9 +72,7 @@ function formatTokenBalance(raw: bigint, decimals: number, maxDecimals = 6): str
   return `${whole}.${fractionStr}`;
 }
 
-type FieldErrors = Partial<
-  Record<"sourceChain" | "destinationChain" | "amountSats" | "recipientAddress", string>
->;
+type FieldErrors = Partial<Record<"sourceChain" | "destinationChain" | "amountSats", string>>;
 
 const CHAIN_ID_TO_NAME: Record<number, SupportedChain> = {
   43114: "avalanche",
@@ -84,18 +92,48 @@ function tokenLabel(token: TokenInfo): string {
   return token.symbol ?? token.name ?? token.address;
 }
 
+const BTC_TOKEN_SYMBOLS = new Set(["BTCB", "WBTC", "WBTC.E", "CBBTC", "TBTC"]);
+const WETH_TOKEN_SYMBOLS = new Set(["WETH"]);
+
+function tokenFamily(token?: TokenInfo | null): "btc" | "weth" | null {
+  if (!token) return null;
+  const symbol = token.symbol?.toUpperCase();
+  if (symbol) {
+    if (BTC_TOKEN_SYMBOLS.has(symbol)) return "btc";
+    if (WETH_TOKEN_SYMBOLS.has(symbol)) return "weth";
+  }
+  const name = token.name?.toUpperCase();
+  if (name) {
+    if (name.includes("BTC")) return "btc";
+    if (name.includes("WETH")) return "weth";
+  }
+  return null;
+}
+
+function findWethToken(tokens: TokenInfo[]): TokenInfo | undefined {
+  return tokens.find((token) => {
+    const symbol = token.symbol?.toUpperCase();
+    if (symbol === "WETH") return true;
+    const name = token.name?.toLowerCase();
+    return name === "weth";
+  });
+}
+
+function buildTokenPayload(token: TokenInfo) {
+  return {
+    address: token.address,
+    decimals: token.decimals,
+    chain_id: token.chain_id,
+  };
+}
+
 function getFieldErrors(
   sourceChain: SupportedChain,
   destinationChain: SupportedChain,
-  amountSats: string,
-  recipientAddress: string,
 ): FieldErrors {
   const errors: FieldErrors = {};
   if (sourceChain === destinationChain) {
     errors.destinationChain = "Must differ from source chain.";
-  }
-  if (recipientAddress !== "" && !isValidEvmAddress(recipientAddress)) {
-    errors.recipientAddress = "Enter a valid 0x\u2026 address.";
   }
   return errors;
 }
@@ -105,7 +143,6 @@ function isFormComplete(
   sourceChain: SupportedChain,
   destinationChain: SupportedChain,
   amountSats: string,
-  recipientAddress: string,
   sourceToken: string,
   destinationToken: string,
 ): boolean {
@@ -114,7 +151,6 @@ function isFormComplete(
   if (!sourceToken || !destinationToken) return false;
   const sats = Number(amountSats);
   if (!amountSats || !Number.isFinite(sats) || sats <= 0) return false;
-  if (!isValidEvmAddress(recipientAddress)) return false;
   return true;
 }
 
@@ -129,15 +165,17 @@ export default function HomePage() {
   const [sourceToken, setSourceToken] = useState("");
   const [destinationToken, setDestinationToken] = useState("");
   const [amountSats, setAmountSats] = useState("100000");
-  const [recipientAddress, setRecipientAddress] = useState("");
 
   const [quote, setQuote] = useState<QuoteResponse | undefined>();
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [tokenUsdPrice, setTokenUsdPrice] = useState<number | undefined>();
+  const [destinationTokenUsdPrice, setDestinationTokenUsdPrice] = useState<number | undefined>();
   const [walletBalanceTokens, setWalletBalanceTokens] = useState<string | undefined>();
+  const [outputAmount, setOutputAmount] = useState<number | undefined>();
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const outputDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     getNetworks()
@@ -232,10 +270,19 @@ export default function HomePage() {
       .catch(() => setTokens([]));
   }, []);
 
-  const sourceTokenOptions = tokens.filter((token) => resolveTokenChain(token) === sourceChain);
-  const destinationTokenOptions = tokens.filter(
+  const sourceChainTokens = tokens.filter((token) => resolveTokenChain(token) === sourceChain);
+  const destinationChainTokens = tokens.filter(
     (token) => resolveTokenChain(token) === destinationChain,
   );
+  const sourceTokenInfo = sourceChainTokens.find((token) => tokenLabel(token) === sourceToken);
+  const destinationTokenInfo = destinationChainTokens.find(
+    (token) => tokenLabel(token) === destinationToken,
+  );
+  const activeFamily = tokenFamily(sourceTokenInfo);
+  const sourceTokenOptions = sourceChainTokens;
+  const destinationTokenOptions = activeFamily
+    ? destinationChainTokens.filter((token) => tokenFamily(token) === activeFamily)
+    : destinationChainTokens;
 
   useEffect(() => {
     if (!sourceTokenOptions.length) {
@@ -257,7 +304,8 @@ export default function HomePage() {
     }
   }, [destinationChain, destinationTokenOptions, destinationToken]);
 
-  const sourceTokenInfo = sourceTokenOptions.find((token) => tokenLabel(token) === sourceToken);
+  const sourceWethToken = findWethToken(sourceChainTokens);
+  const destinationWethToken = findWethToken(destinationChainTokens);
 
   useEffect(() => {
     if (!sourceTokenInfo) {
@@ -270,6 +318,18 @@ export default function HomePage() {
       })
       .catch(() => setTokenUsdPrice(undefined));
   }, [sourceTokenInfo?.address, sourceTokenInfo?.chain_id]);
+
+  useEffect(() => {
+    if (!destinationTokenInfo) {
+      setDestinationTokenUsdPrice(undefined);
+      return;
+    }
+    getTokenPrice(destinationTokenInfo.address, destinationTokenInfo.chain_id)
+      .then((price) => {
+        setDestinationTokenUsdPrice(Number.isFinite(price) && price > 0 ? price : undefined);
+      })
+      .catch(() => setDestinationTokenUsdPrice(undefined));
+  }, [destinationTokenInfo?.address, destinationTokenInfo?.chain_id]);
 
   useEffect(() => {
     if (!wallet.address || !sourceTokenInfo) {
@@ -301,14 +361,56 @@ export default function HomePage() {
     };
   }, [wallet.address, sourceTokenInfo?.address, sourceTokenInfo?.decimals, sourceTokenInfo?.chain_id]);
 
-  const fieldErrors = getFieldErrors(sourceChain, destinationChain, amountSats, recipientAddress);
+  useEffect(() => {
+    if (outputDebounceRef.current) clearTimeout(outputDebounceRef.current);
+    const amountIn = parseAmountInput(amountSats);
+    if (!amountIn || !sourceTokenInfo || !destinationTokenInfo || !sourceWethToken || !destinationWethToken) {
+      setOutputAmount(undefined);
+      return;
+    }
+
+    outputDebounceRef.current = setTimeout(() => {
+      getOutputAmount({
+        amount_in: amountIn,
+        token_in: buildTokenPayload(sourceTokenInfo),
+        token_med_in: buildTokenPayload(sourceWethToken),
+        token_med_out: buildTokenPayload(destinationWethToken),
+        token_out: buildTokenPayload(destinationTokenInfo),
+        wallet_address: wallet.address ?? undefined,
+      })
+        .then((value) => {
+          setOutputAmount(Number.isFinite(value) ? value : undefined);
+        })
+        .catch(() => setOutputAmount(undefined));
+    }, QUOTE_DEBOUNCE_MS);
+
+    return () => {
+      if (outputDebounceRef.current) clearTimeout(outputDebounceRef.current);
+    };
+  }, [
+    amountSats,
+    sourceTokenInfo?.address,
+    sourceTokenInfo?.decimals,
+    sourceTokenInfo?.chain_id,
+    destinationTokenInfo?.address,
+    destinationTokenInfo?.decimals,
+    destinationTokenInfo?.chain_id,
+    sourceWethToken?.address,
+    sourceWethToken?.decimals,
+    sourceWethToken?.chain_id,
+    destinationWethToken?.address,
+    destinationWethToken?.decimals,
+    destinationWethToken?.chain_id,
+    wallet.address,
+  ]);
+
+  const fieldErrors = getFieldErrors(sourceChain, destinationChain);
   const hasErrors = Object.keys(fieldErrors).length > 0;
   const formComplete = isFormComplete(
     wallet.address,
     sourceChain,
     destinationChain,
     amountSats,
-    recipientAddress,
     sourceToken,
     destinationToken,
   );
@@ -355,7 +457,6 @@ export default function HomePage() {
     sourceToken,
     destinationToken,
     amountSats,
-    recipientAddress,
     wallet.address,
     formComplete,
   ]);
@@ -452,7 +553,7 @@ export default function HomePage() {
           sourceToken={sourceToken}
           destinationToken={destinationToken}
           amountSats={amountSats}
-          recipientAddress={recipientAddress}
+          outputAmount={outputAmount}
           chainOptions={chainOptions}
           sourceTokenOptions={sourceTokenOptions}
           destinationTokenOptions={destinationTokenOptions}
@@ -465,6 +566,7 @@ export default function HomePage() {
           errorMessage={wallet.address ? errorMessage || undefined : undefined}
           walletBalanceTokens={wallet.status === "connected" ? walletBalanceTokens : undefined}
           tokenUsdPrice={tokenUsdPrice}
+          destinationTokenUsdPrice={destinationTokenUsdPrice}
           onSourceChainChange={(chain) => {
             setSourceChain(chain);
             setQuote(undefined);
@@ -485,7 +587,6 @@ export default function HomePage() {
             setAmountSats(v);
             setQuote(undefined);
           }}
-          onRecipientAddressChange={setRecipientAddress}
           onSwapChains={handleSwapChains}
           onSubmit={handleSubmit}
         />

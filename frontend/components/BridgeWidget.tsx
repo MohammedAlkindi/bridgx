@@ -13,7 +13,7 @@ type BridgeWidgetProps = {
   sourceToken: string;
   destinationToken: string;
   amountSats: string;
-  recipientAddress: string;
+  outputAmount?: number;
   chainOptions: readonly SupportedChain[];
   sourceTokenOptions: readonly TokenInfo[];
   destinationTokenOptions: readonly TokenInfo[];
@@ -21,19 +21,19 @@ type BridgeWidgetProps = {
   ctaLabel?: string;
   loading?: boolean;
   canSubmit?: boolean;
-  fieldErrors?: Partial<Record<"sourceChain" | "destinationChain" | "amountSats" | "recipientAddress", string>>;
+  fieldErrors?: Partial<Record<"sourceChain" | "destinationChain" | "amountSats", string>>;
   /** Neutral message — wallet not connected, form guidance, etc. */
   infoMessage?: string;
   /** Error message — quote failure, bridge error, etc. */
   errorMessage?: string;
   walletBalanceTokens?: string;
   tokenUsdPrice?: number;
+  destinationTokenUsdPrice?: number;
   onSourceChainChange: (chain: SupportedChain) => void;
   onDestinationChainChange: (chain: SupportedChain) => void;
   onSourceTokenChange: (token: string) => void;
   onDestinationTokenChange: (token: string) => void;
   onAmountSatsChange: (amount: string) => void;
-  onRecipientAddressChange: (address: string) => void;
   onSwapChains: () => void;
   onSubmit: () => void;
 };
@@ -89,13 +89,19 @@ function formatScaledAmount(amountScaled: string): string {
   }
 }
 
+function formatTokenAmount(amount: number, maxDecimals = 6): string {
+  return amount.toLocaleString("en-US", {
+    maximumFractionDigits: maxDecimals,
+  });
+}
+
 export default function BridgeWidget({
   sourceChain,
   destinationChain,
   sourceToken,
   destinationToken,
   amountSats,
-  recipientAddress,
+  outputAmount,
   chainOptions,
   sourceTokenOptions,
   destinationTokenOptions,
@@ -108,12 +114,12 @@ export default function BridgeWidget({
   errorMessage,
   walletBalanceTokens,
   tokenUsdPrice,
+  destinationTokenUsdPrice,
   onSourceChainChange,
   onDestinationChainChange,
   onSourceTokenChange,
   onDestinationTokenChange,
   onAmountSatsChange,
-  onRecipientAddressChange,
   onSwapChains,
   onSubmit,
 }: BridgeWidgetProps) {
@@ -137,6 +143,23 @@ export default function BridgeWidget({
   const destinationQuoteUsd = showUsd && quote && sameToken
     ? tokenToUsd(Number(formatScaledAmount(quote.destinationAmountSats)), tokenUsdPrice!)
     : null;
+  const outputAmountDisplay = outputAmount !== undefined && Number.isFinite(outputAmount)
+    ? formatTokenAmount(outputAmount)
+    : "—";
+  const outputAmountUsd =
+    outputAmount !== undefined &&
+    Number.isFinite(outputAmount) &&
+    destinationTokenUsdPrice !== undefined
+      ? tokenToUsd(outputAmount, destinationTokenUsdPrice)
+      : null;
+  const sourceChainLabel = CHAIN_LABELS[sourceChain];
+  const destinationChainLabel = CHAIN_LABELS[destinationChain];
+  const amountInLabel = sourceToken
+    ? `Amount in (${sourceToken} / ${sourceChainLabel})`
+    : `Amount in (${sourceChainLabel})`;
+  const amountOutLabel = destinationToken
+    ? `Amount out (${destinationToken} / ${destinationChainLabel})`
+    : `Amount out (${destinationChainLabel})`;
 
   return (
     <section className="w-full rounded-2xl border border-[#1e2a4a] bg-[#0f1630] shadow-xl" style={{ overflow: "hidden" }}>
@@ -246,7 +269,7 @@ export default function BridgeWidget({
       <div className="mt-4 grid grid-cols-[1fr_40px_1fr] items-end gap-2">
         <div>
           <label htmlFor="source-token" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[#5a6d9a]">
-            Token
+            Token in
           </label>
           <select
             id="source-token"
@@ -269,7 +292,7 @@ export default function BridgeWidget({
         <div />
         <div>
           <label htmlFor="destination-token" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[#5a6d9a]">
-            Token
+            Token out
           </label>
           <select
             id="destination-token"
@@ -300,7 +323,7 @@ export default function BridgeWidget({
         {/* Amount */}
         <div>
           <label htmlFor="amount-sats" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[#5a6d9a]">
-            Amount {sourceToken ? `(${sourceToken})` : ""}
+            {amountInLabel}
           </label>
           <div className="relative">
             <input
@@ -356,21 +379,17 @@ export default function BridgeWidget({
           )}
         </div>
 
-        {/* Recipient address */}
+        {/* Amount out */}
         <div>
-          <label htmlFor="recipient-address" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[#5a6d9a]">
-            Recipient address
+          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[#5a6d9a]">
+            {amountOutLabel}
           </label>
-          <input
-            id="recipient-address"
-            type="text"
-            placeholder="0x…"
-            value={recipientAddress}
-            onChange={(e) => onRecipientAddressChange(e.target.value)}
-            className="w-full rounded-lg border border-[#1e2d5a] bg-[#090e1f] px-3 py-2.5 font-mono text-sm text-[#e2e8ff] placeholder-[#3d5070] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20"
-          />
-          {fieldErrors?.recipientAddress && (
-            <p className="mt-1 text-[11px] text-red-400">{fieldErrors.recipientAddress}</p>
+          <div className="flex items-center justify-between rounded-lg border border-[#1e2d5a] bg-[#090e1f] px-3 py-2.5 text-sm text-[#e2e8ff]">
+            <span>{outputAmountDisplay}</span>
+            <span className="text-xs font-medium text-[#4a5a8a]">{destinationToken || "token"}</span>
+          </div>
+          {outputAmountUsd && (
+            <p className="mt-1 text-xs text-[#5a6d9a]">≈ {outputAmountUsd}</p>
           )}
         </div>
       </div>
