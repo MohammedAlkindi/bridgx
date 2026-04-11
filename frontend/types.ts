@@ -63,6 +63,11 @@ export interface AttestationResponse {
   messageHash?: TxHash;
   destinationTxHash?: TxHash;
   releaseTxHash?: TxHash;
+  attestationSource?: string;
+  attestationStatus?: string;
+  releaseStatus?: string;
+  releaseBalance?: string;
+  releaseNeeded?: string;
 }
 
 export interface ReceiptRequest {
