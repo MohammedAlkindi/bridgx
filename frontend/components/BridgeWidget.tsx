@@ -26,8 +26,18 @@ type BridgeWidgetProps = {
   onSubmit: () => void;
 };
 
-function formatChainLabel(chain: SupportedChain): string {
-  return chain.charAt(0).toUpperCase() + chain.slice(1);
+const CHAIN_LABELS: Record<SupportedChain, string> = {
+  base: "Base",
+  arbitrum: "Arbitrum",
+  optimism: "Optimism",
+};
+
+function formatExpiry(iso: string): string {
+  const diff = Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 1000));
+  if (diff <= 0) return "Expired";
+  const m = Math.floor(diff / 60);
+  const s = diff % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
 export default function BridgeWidget({
@@ -51,111 +61,142 @@ export default function BridgeWidget({
   const isSubmitDisabled = loading || !canSubmit;
 
   return (
-    <section className="w-full max-w-xl rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
-      <h2 className="mb-4 text-lg font-semibold text-neutral-900">Bridge BTC</h2>
-
-      <div className="space-y-4">
+    <section className="w-full rounded-2xl border border-[#29335a] bg-[#121937] p-6 shadow-lg">
+      {/* Chain selectors */}
+      <div className="grid grid-cols-2 gap-3">
         <div>
-          <label htmlFor="source-chain" className="mb-1 block text-sm font-medium text-neutral-700">
-            Source chain
+          <label htmlFor="source-chain" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#6b7db3]">
+            From
           </label>
           <select
             id="source-chain"
             value={sourceChain}
-            onChange={(event) => onSourceChainChange(event.target.value as SupportedChain)}
-            className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/30"
+            onChange={(e) => onSourceChainChange(e.target.value as SupportedChain)}
+            className="w-full rounded-lg border border-[#263360] bg-[#0f1632] px-3 py-2.5 text-sm text-[#e2e8ff] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20"
           >
             {chainOptions.map((chain) => (
-              <option key={chain} value={chain}>
-                {formatChainLabel(chain)}
-              </option>
+              <option key={chain} value={chain}>{CHAIN_LABELS[chain]}</option>
             ))}
           </select>
-          {fieldErrors?.sourceChain ? (
-            <p className="mt-1 text-xs text-red-600">{fieldErrors.sourceChain}</p>
-          ) : null}
+          {fieldErrors?.sourceChain && (
+            <p className="mt-1 text-xs text-red-400">{fieldErrors.sourceChain}</p>
+          )}
         </div>
 
         <div>
-          <label htmlFor="destination-chain" className="mb-1 block text-sm font-medium text-neutral-700">
-            Destination chain
+          <label htmlFor="destination-chain" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#6b7db3]">
+            To
           </label>
           <select
             id="destination-chain"
             value={destinationChain}
-            onChange={(event) => onDestinationChainChange(event.target.value as SupportedChain)}
-            className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/30"
+            onChange={(e) => onDestinationChainChange(e.target.value as SupportedChain)}
+            className="w-full rounded-lg border border-[#263360] bg-[#0f1632] px-3 py-2.5 text-sm text-[#e2e8ff] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20"
           >
             {chainOptions.map((chain) => (
-              <option key={chain} value={chain}>
-                {formatChainLabel(chain)}
-              </option>
+              <option key={chain} value={chain}>{CHAIN_LABELS[chain]}</option>
             ))}
           </select>
-          {fieldErrors?.destinationChain ? (
-            <p className="mt-1 text-xs text-red-600">{fieldErrors.destinationChain}</p>
-          ) : null}
+          {fieldErrors?.destinationChain && (
+            <p className="mt-1 text-xs text-red-400">{fieldErrors.destinationChain}</p>
+          )}
         </div>
+      </div>
 
-        <div>
-          <label htmlFor="amount-sats" className="mb-1 block text-sm font-medium text-neutral-700">
-            BTC amount (sats)
-          </label>
+      {/* Amount input */}
+      <div className="mt-4">
+        <label htmlFor="amount-sats" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#6b7db3]">
+          Amount (satoshis)
+        </label>
+        <div className="relative">
           <input
             id="amount-sats"
             type="text"
             inputMode="numeric"
             placeholder="100000"
             value={amountSats}
-            onChange={(event) => onAmountSatsChange(event.target.value)}
-            className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/30"
+            onChange={(e) => onAmountSatsChange(e.target.value)}
+            className="w-full rounded-lg border border-[#263360] bg-[#0f1632] py-2.5 pl-3 pr-16 text-sm text-[#e2e8ff] placeholder-[#4a5a8a] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20"
           />
-          {fieldErrors?.amountSats ? <p className="mt-1 text-xs text-red-600">{fieldErrors.amountSats}</p> : null}
+          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-medium text-[#6b7db3]">
+            sats
+          </span>
         </div>
-
-        <div>
-          <label htmlFor="recipient-address" className="mb-1 block text-sm font-medium text-neutral-700">
-            Recipient address
-          </label>
-          <input
-            id="recipient-address"
-            type="text"
-            placeholder="0x..."
-            value={recipientAddress}
-            onChange={(event) => onRecipientAddressChange(event.target.value)}
-            className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/30"
-          />
-          {fieldErrors?.recipientAddress ? (
-            <p className="mt-1 text-xs text-red-600">{fieldErrors.recipientAddress}</p>
-          ) : null}
-        </div>
-
-        <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700">
-          <p className="font-medium text-neutral-900">Quote</p>
-          {quote ? (
-            <div className="mt-1 space-y-1">
-              <p>Input: {quote.sourceAmountSats} sats</p>
-              <p>Estimated received: {quote.destinationAmountSats} sats</p>
-              <p>ETA: {Math.ceil(quote.estimatedDurationSec / 60)} min</p>
-              {quote.routeExpiresAt ? <p>Expires: {quote.routeExpiresAt}</p> : null}
-            </div>
-          ) : (
-            <p className="mt-1 text-neutral-500">Enter transfer details to view a quote.</p>
-          )}
-        </div>
-
-        {errorMessage ? <p className="text-sm text-red-600">{errorMessage}</p> : null}
-
-        <button
-          type="button"
-          onClick={onSubmit}
-          disabled={isSubmitDisabled}
-          aria-busy={loading}
-          className="w-full rounded-lg bg-[#F7931A] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#e28512] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {loading ? "Processing..." : ctaLabel}
-        </button>
+        {fieldErrors?.amountSats && (
+          <p className="mt-1 text-xs text-red-400">{fieldErrors.amountSats}</p>
+        )}
       </div>
+
+      {/* Recipient address */}
+      <div className="mt-4">
+        <label htmlFor="recipient-address" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#6b7db3]">
+          Recipient address
+        </label>
+        <input
+          id="recipient-address"
+          type="text"
+          placeholder="0x..."
+          value={recipientAddress}
+          onChange={(e) => onRecipientAddressChange(e.target.value)}
+          className="w-full rounded-lg border border-[#263360] bg-[#0f1632] px-3 py-2.5 font-mono text-sm text-[#e2e8ff] placeholder-[#4a5a8a] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20"
+        />
+        {fieldErrors?.recipientAddress && (
+          <p className="mt-1 text-xs text-red-400">{fieldErrors.recipientAddress}</p>
+        )}
+      </div>
+
+      {/* Quote panel */}
+      <div className="mt-4 rounded-xl border border-[#1e2d5a] bg-[#0d1326] p-4">
+        <p className="text-xs font-semibold uppercase tracking-wider text-[#6b7db3]">Quote</p>
+        {quote ? (
+          <div className="mt-2 space-y-1.5 text-sm">
+            <div className="flex justify-between">
+              <span className="text-[#9eb3ff]">You send</span>
+              <span className="font-medium text-[#e2e8ff]">{Number(quote.sourceAmountSats).toLocaleString()} sats</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[#9eb3ff]">You receive</span>
+              <span className="font-medium text-emerald-400">{Number(quote.destinationAmountSats).toLocaleString()} sats</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[#9eb3ff]">ETA</span>
+              <span className="font-medium text-[#e2e8ff]">~{Math.ceil(quote.estimatedDurationSec / 60)} min</span>
+            </div>
+            {quote.routeExpiresAt && (
+              <div className="flex justify-between border-t border-[#1e2d5a] pt-1.5">
+                <span className="text-[#9eb3ff]">Quote expires in</span>
+                <span className="font-medium text-amber-400">{formatExpiry(quote.routeExpiresAt)}</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-[#4a5a8a]">Fill in all fields to get a live quote.</p>
+        )}
+      </div>
+
+      {/* Error / info message */}
+      {errorMessage && (
+        <p className="mt-3 text-sm text-[#9eb3ff]">{errorMessage}</p>
+      )}
+
+      {/* Submit button */}
+      <button
+        type="button"
+        onClick={onSubmit}
+        disabled={isSubmitDisabled}
+        aria-busy={loading}
+        className="mt-5 w-full rounded-xl bg-[#F7931A] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#e28512] disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {loading ? (
+          <span className="inline-flex items-center gap-2">
+            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+            Processing…
+          </span>
+        ) : ctaLabel}
+      </button>
     </section>
   );
 }

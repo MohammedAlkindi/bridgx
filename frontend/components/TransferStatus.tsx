@@ -22,18 +22,9 @@ function getStepState(step: TransferStatusValue, status: TransferStatusValue): "
   const currentIndex = PROGRESS_STEPS.indexOf(status);
   const stepIndex = PROGRESS_STEPS.indexOf(step);
 
-  if (currentIndex === -1) {
-    return "todo";
-  }
-
-  if (stepIndex < currentIndex) {
-    return "done";
-  }
-
-  if (stepIndex === currentIndex) {
-    return "current";
-  }
-
+  if (currentIndex === -1) return "todo";
+  if (stepIndex < currentIndex) return "done";
+  if (stepIndex === currentIndex) return "current";
   return "todo";
 }
 
@@ -41,21 +32,27 @@ export default function TransferStatus({ status, errorMessage }: TransferStatusP
   const isSuccess = status === "COMPLETED";
   const isFailure = TERMINAL_FAILURE_STATES.includes(status);
 
-  const bannerTone = isSuccess
-    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+  const bannerClasses = isSuccess
+    ? "border-emerald-700 bg-emerald-900/30 text-emerald-400"
     : isFailure
-      ? "border-red-200 bg-red-50 text-red-800"
-      : "border-neutral-200 bg-neutral-50 text-neutral-700";
+      ? "border-red-700 bg-red-900/30 text-red-400"
+      : "border-[#1e2d5a] bg-[#0d1326] text-[#9eb3ff]";
 
   return (
-    <section className="w-full max-w-xl rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
-      <h2 className="text-lg font-semibold text-neutral-900">Transfer progress</h2>
-      <p className="mt-1 text-sm text-neutral-600">Track each bridge step from source submission to destination finalization.</p>
+    <section className="w-full rounded-2xl border border-[#29335a] bg-[#121937] p-6 shadow-lg">
+      <h2 className="text-base font-semibold text-[#f0f4ff]">Transfer progress</h2>
+      <p className="mt-1 text-sm text-[#6b7db3]">
+        Track each step from source submission to destination finalization.
+      </p>
 
-      <div className={`mt-4 rounded-lg border px-3 py-2 text-sm font-medium ${bannerTone}`}>
-        {isFailure ? `Transfer ${TRANSFER_STATUS_LABELS[status].toLowerCase()}.` : `Current status: ${TRANSFER_STATUS_LABELS[status]}`}
+      {/* Status banner */}
+      <div className={`mt-4 rounded-lg border px-3 py-2 text-sm font-medium ${bannerClasses}`}>
+        {isFailure
+          ? `Transfer ${TRANSFER_STATUS_LABELS[status].toLowerCase()}.`
+          : `Status: ${TRANSFER_STATUS_LABELS[status]}`}
       </div>
 
+      {/* Progress steps */}
       <ol className="mt-4 space-y-2">
         {PROGRESS_STEPS.map((step, index) => {
           const stepState = getStepState(step, status);
@@ -65,39 +62,55 @@ export default function TransferStatus({ status, errorMessage }: TransferStatusP
           return (
             <li
               key={step}
-              className={`flex items-start gap-3 rounded-lg border px-3 py-2 ${
+              className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
                 isCurrent
-                  ? "border-[#F7931A]/50 bg-[#F7931A]/10"
+                  ? "border-[#F7931A]/40 bg-[#F7931A]/10"
                   : isDone
-                    ? "border-emerald-200 bg-emerald-50"
-                    : "border-neutral-200 bg-white"
+                    ? "border-emerald-800 bg-emerald-900/20"
+                    : "border-[#1e2d5a] bg-[#0d1326]"
               }`}
             >
               <span
-                className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
-                  isDone ? "bg-emerald-500 text-white" : isCurrent ? "bg-[#F7931A] text-white" : "bg-neutral-200 text-neutral-600"
+                className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+                  isDone
+                    ? "bg-emerald-600 text-white"
+                    : isCurrent
+                      ? "bg-[#F7931A] text-white"
+                      : "bg-[#1a2a50] text-[#6b7db3]"
                 }`}
                 aria-hidden="true"
               >
                 {isDone ? "✓" : index + 1}
               </span>
 
-              <div className="min-w-0">
-                <p className={`text-sm font-medium ${isCurrent ? "text-neutral-900" : "text-neutral-700"}`}>
+              <div className="min-w-0 flex-1">
+                <p className={`text-sm font-medium ${
+                  isDone ? "text-emerald-400" : isCurrent ? "text-[#f0f4ff]" : "text-[#6b7db3]"
+                }`}>
                   {TRANSFER_STATUS_LABELS[step]}
                 </p>
-                {isCurrent ? <p className="text-xs text-neutral-600">In progress</p> : null}
+                {isCurrent && (
+                  <p className="mt-0.5 text-xs text-[#F7931A]">In progress…</p>
+                )}
               </div>
+
+              {isCurrent && (
+                <svg className="h-4 w-4 shrink-0 animate-spin text-[#F7931A]" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                </svg>
+              )}
             </li>
           );
         })}
       </ol>
 
-      {isFailure ? (
-        <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {errorMessage ?? "This transfer did not complete. Please retry with a new quote."}
+      {/* Failure message */}
+      {isFailure && (
+        <p className="mt-4 rounded-lg border border-red-800 bg-red-900/20 px-3 py-2 text-sm text-red-400">
+          {errorMessage ?? "This transfer did not complete. Please start a new transfer."}
         </p>
-      ) : null}
+      )}
     </section>
   );
 }
