@@ -83,7 +83,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                       width: 28,
                       height: 28,
                       borderRadius: 8,
-                      background: "#F7931A",
+                      background: "var(--brand-accent-color)",
                       fontSize: 14,
                       fontWeight: 800,
                       color: "white",
@@ -116,31 +116,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 </nav>
               </div>
 
-              {/* Network status */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 12,
-                  fontWeight: 500,
-                  color: "#5a6d9a",
-                  userSelect: "none",
-                }}
-              >
-                <span
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: "50%",
-                    background: "#10b981",
-                    display: "inline-block",
-                    flexShrink: 0,
-                  }}
-                  aria-hidden="true"
-                />
-                Mainnet
-              </div>
             </div>
           </header>
 
