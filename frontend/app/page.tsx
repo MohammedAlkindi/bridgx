@@ -237,6 +237,7 @@ export default function HomePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sourceTxHash, setSourceTxHash] = useState<TxHash | undefined>();
   const [destinationTxHash, setDestinationTxHash] = useState<TxHash | undefined>();
+  const [releaseTxHash, setReleaseTxHash] = useState<TxHash | undefined>();
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const walletAddressRef = useRef<string | undefined>();
@@ -604,6 +605,7 @@ export default function HomePage() {
     setErrorMessage("");
     setSourceTxHash(undefined);
     setDestinationTxHash(undefined);
+    setReleaseTxHash(undefined);
     setBridgeStatus("Preparing transaction...");
     try {
       const allowanceHex = (await ethereum.request({
@@ -671,6 +673,9 @@ export default function HomePage() {
 
       const destinationTxHash = attestation.destinationTxHash as TxHash;
       setDestinationTxHash(destinationTxHash);
+      if (attestation.releaseTxHash) {
+        setReleaseTxHash(attestation.releaseTxHash as TxHash);
+      }
       setBridgeStatus(`Destination tx submitted: ${destinationTxHash}`);
 
       for (let attempt = 0; attempt < 30; attempt += 1) {
@@ -794,7 +799,7 @@ export default function HomePage() {
           onSubmit={wallet.address ? handleSubmit : handleConnect}
         />
 
-        {(sourceTxHash || destinationTxHash) && (
+        {(sourceTxHash || destinationTxHash || releaseTxHash) && (
           <div
             style={{
               marginTop: 12,
@@ -829,6 +834,19 @@ export default function HomePage() {
                   style={{ color: "#4a6080" }}
                 >
                   {destinationTxHash}
+                </a>
+              </div>
+            )}
+            {releaseTxHash && (
+              <div>
+                Payout tx:{" "}
+                <a
+                  href={`${EXPLORER_TX_URLS[destinationChain]}${releaseTxHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "#4a6080" }}
+                >
+                  {releaseTxHash}
                 </a>
               </div>
             )}
