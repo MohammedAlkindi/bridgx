@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import TransferStatusComponent from "../../components/TransferStatus";
-import { getBridgeReceipt, getBridgeStatus } from "../../lib/api";
-import type { SupportedChain, TransferReceiptResponse, TransferStatusResponse } from "../../types";
+import TransferStatusComponent from "../../../components/TransferStatus";
+import { getBridgeReceipt, getBridgeStatus } from "../../../lib/api";
+import type { SupportedChain, TransferReceiptResponse, TransferStatusResponse } from "../../../types";
 
 const TERMINAL_STATES = new Set(["COMPLETED", "FAILED", "EXPIRED"]);
 const POLL_INTERVAL_MS = 4000;
