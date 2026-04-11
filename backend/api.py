@@ -118,9 +118,17 @@ _CCTP_DESTINATION_CALLER = os.getenv(
     "0x0000000000000000000000000000000000000000",
 )
 _DESTINATION_RELEASE_GAS = int(os.getenv("DESTINATION_RELEASE_GAS", "200000"))
+_RELEASE_DELAY_CHECKS = int(os.getenv("RELEASE_DELAY_CHECKS", "3"))
+_RELEASE_CHECKS_TTL_S = int(os.getenv("RELEASE_CHECKS_TTL_S", "3600"))
+_RECEIVE_RECEIPT_ATTEMPTS = int(os.getenv("RECEIVE_RECEIPT_ATTEMPTS", "2"))
+_RECEIVE_RECEIPT_INTERVAL_S = int(os.getenv("RECEIVE_RECEIPT_INTERVAL_S", "2"))
+_RELEASE_RECEIPT_ATTEMPTS = int(os.getenv("RELEASE_RECEIPT_ATTEMPTS", "2"))
+_RELEASE_RECEIPT_INTERVAL_S = int(os.getenv("RELEASE_RECEIPT_INTERVAL_S", "2"))
+_ATTESTATION_STATE: Dict[str, Dict[str, Any]] = {}
 
 _RELAYER_PRIVATE_KEY = os.getenv("RELAYER_PRIVATE_KEY") or os.getenv("DEPLOYER_PRIVATE_KEY")
 _IRIS_BASE_URL = "https://iris-api.circle.com/attestations"
+_IRIS_MESSAGES_URL = "https://iris-api.circle.com/v2/messages"
 _ATTESTATION_POLL_ATTEMPTS = int(os.getenv("ATTESTATION_POLL_ATTEMPTS", "60"))
 _ATTESTATION_POLL_INTERVAL_S = int(os.getenv("ATTESTATION_POLL_INTERVAL_S", "5"))
 
@@ -167,11 +175,12 @@ def _encode_contract_call(contract: Any, fn_name: str, args: list) -> str:
     return contract.encode_abi(fn_name, args=args)
 
 
-def _parse_message_for_release(message: Any) -> tuple[str, str, int, int]:
+def _parse_message_for_release(message: Any) -> tuple[str, str, str, int, int]:
     message_bytes = Web3.to_bytes(hexstr=message) if isinstance(message, str) else bytes(message)
     if len(message_bytes) < 148:
         raise HTTPException(status_code=500, detail="Message too short for CCTP parsing")
 
+    nonce = Web3.to_hex(message_bytes[12:44])
     message_body = message_bytes[148:]
     if len(message_body) < 228:
         raise HTTPException(status_code=500, detail="Message body too short for burn parsing")
@@ -187,8 +196,51 @@ def _parse_message_for_release(message: Any) -> tuple[str, str, int, int]:
         raise HTTPException(status_code=500, detail="Hook data missing in burn message")
     recipient = Web3.to_checksum_address(hook_data[-20:])
 
-    return mint_recipient, recipient, amount, fee_executed
+    return nonce, mint_recipient, recipient, amount, fee_executed
 
+
+def _get_attestation_state(message_hash: str) -> Dict[str, Any]:
+    now = time.time()
+    state = _ATTESTATION_STATE.get(message_hash)
+    if state and now - state.get("updated_at", 0) > _RELEASE_CHECKS_TTL_S:
+        state = None
+    if state is None:
+        state = {
+            "checks": 0,
+            "destination_tx_hash": None,
+            "release_tx_hash": None,
+            "release_failures": 0,
+            "received": False,
+            "updated_at": now,
+        }
+        _ATTESTATION_STATE[message_hash] = state
+    state["updated_at"] = now
+    return state
+
+
+def _get_receipt_with_retries(
+    w3: Web3,
+    tx_hash: str,
+    attempts: int,
+    interval_s: int,
+) -> Optional[Dict[str, Any]]:
+    for _ in range(max(1, attempts)):
+        try:
+            return w3.eth.get_transaction_receipt(tx_hash)
+        except TransactionNotFound:
+            time.sleep(max(0, interval_s))
+    return None
+
+
+_ERC20_ABI: List[Dict[str, Any]] = [
+    {
+        "inputs": [{"internalType": "address", "name": "account", "type": "address"}],
+        "name": "balanceOf",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    }
+]
 
 _MESSAGE_TRANSMITTER_ABI: List[Dict[str, Any]] = [
     {
@@ -214,6 +266,13 @@ _MESSAGE_TRANSMITTER_ABI: List[Dict[str, Any]] = [
         "stateMutability": "nonpayable",
         "type": "function",
     },
+    {
+        "inputs": [{"internalType": "bytes32", "name": "nonce", "type": "bytes32"}],
+        "name": "usedNonces",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
 ]
 
 _SOURCE_EXECUTOR_ABI: List[Dict[str, Any]] = [
@@ -237,6 +296,13 @@ _SOURCE_EXECUTOR_ABI: List[Dict[str, Any]] = [
 ]
 
 _DESTINATION_EXECUTOR_ABI: List[Dict[str, Any]] = [
+    {
+        "inputs": [],
+        "name": "relayer",
+        "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
     {
         "inputs": [
             {"internalType": "address", "name": "recipient", "type": "address"},
@@ -357,6 +423,11 @@ class AttestationResponse(BaseModel):
     message_hash: Optional[str] = Field(default=None, serialization_alias="messageHash")
     destination_tx_hash: Optional[str] = Field(default=None, serialization_alias="destinationTxHash")
     release_tx_hash: Optional[str] = Field(default=None, serialization_alias="releaseTxHash")
+    attestation_source: Optional[str] = Field(default=None, serialization_alias="attestationSource")
+    attestation_status: Optional[str] = Field(default=None, serialization_alias="attestationStatus")
+    release_status: Optional[str] = Field(default=None, serialization_alias="releaseStatus")
+    release_balance: Optional[str] = Field(default=None, serialization_alias="releaseBalance")
+    release_needed: Optional[str] = Field(default=None, serialization_alias="releaseNeeded")
 
 
 class ReceiptRequest(BaseModel):
@@ -713,6 +784,10 @@ def attestation(request: AttestationRequest) -> AttestationResponse:
         request.destination_chain,
     )
     try:
+        attestation_source = "fallback"
+        attestation_status = None
+        attestation_message = None
+        attestation_value = None
         if not _RELAYER_PRIVATE_KEY:
             raise HTTPException(status_code=500, detail="Relayer private key not configured")
 
@@ -739,46 +814,95 @@ def attestation(request: AttestationRequest) -> AttestationResponse:
             abi=_MESSAGE_TRANSMITTER_ABI,
         )
         try:
-            from web3.logs import DISCARD
-
-            message_events = transmitter.events.MessageSent().process_receipt(receipt, errors=DISCARD)
+            v2_resp = _requests.get(
+                f"{_IRIS_MESSAGES_URL}/{_CCTP_DOMAIN_IDS[source_chain_id]}",
+                params={"transactionHash": request.source_tx_hash},
+                timeout=30,
+            )
+            if v2_resp.status_code == 200:
+                v2_payload = v2_resp.json()
+                messages = v2_payload.get("messages") if isinstance(v2_payload, dict) else []
+                if isinstance(messages, list):
+                    for item in messages:
+                        if not isinstance(item, dict):
+                            continue
+                        decoded = item.get("decodedMessage") or {}
+                        if isinstance(decoded, dict):
+                            try:
+                                if int(decoded.get("destinationDomain")) != _CCTP_DOMAIN_IDS[destination_chain_id]:
+                                    continue
+                            except Exception:
+                                continue
+                        msg_hex = item.get("message")
+                        att_hex = item.get("attestation")
+                        if (
+                            isinstance(msg_hex, str)
+                            and msg_hex.startswith("0x")
+                            and isinstance(att_hex, str)
+                            and att_hex.startswith("0x")
+                            and len(att_hex) > 2
+                        ):
+                            attestation_source = "v2"
+                            attestation_status = item.get("status")
+                            attestation_message = msg_hex
+                            attestation_value = att_hex
+                            break
         except Exception:
-            message_events = transmitter.events.MessageSent().process_receipt(receipt)
+            attestation_message = None
 
-        if not message_events:
-            raise HTTPException(status_code=502, detail="MessageSent event not found in receipt")
+        if attestation_message is None:
+            try:
+                from web3.logs import DISCARD
 
-        message = message_events[0]["args"]["message"]
-        mint_recipient, release_recipient, amount, fee_executed = _parse_message_for_release(message)
+                message_events = transmitter.events.MessageSent().process_receipt(receipt, errors=DISCARD)
+            except Exception:
+                message_events = transmitter.events.MessageSent().process_receipt(receipt)
+
+            if not message_events:
+                raise HTTPException(status_code=502, detail="MessageSent event not found in receipt")
+
+            message = message_events[0]["args"]["message"]
+        else:
+            message = attestation_message
+        nonce, mint_recipient, release_recipient, amount, fee_executed = _parse_message_for_release(message)
         if amount <= fee_executed:
             raise HTTPException(status_code=400, detail="Invalid burn amount for release")
 
-        message_hash = Web3.keccak(message).hex()
+        message_bytes = Web3.to_bytes(hexstr=message) if isinstance(message, str) else bytes(message)
+        message_hash = Web3.keccak(message_bytes).hex()
         if not message_hash.startswith("0x"):
             message_hash = f"0x{message_hash}"
         logger.info("Message hash: %s", message_hash)
 
-        attestation_value = None
-        for attempt in range(request.poll_attempts):
-            resp = _requests.get(f"{_IRIS_BASE_URL}/{message_hash}", timeout=30)
-            if resp.status_code == 404:
-                logger.info("Attestation not ready (404) attempt=%s", attempt + 1)
+        if attestation_value is None:
+            for attempt in range(request.poll_attempts):
+                resp = _requests.get(f"{_IRIS_BASE_URL}/{message_hash}", timeout=30)
+                if resp.status_code == 404:
+                    attestation_status = "not_ready"
+                    logger.info("Attestation not ready (404) attempt=%s", attempt + 1)
+                    time.sleep(request.poll_interval_s)
+                    continue
+                if resp.status_code == 429:
+                    attestation_status = "rate_limited"
+                    logger.info("Attestation rate-limited (429) attempt=%s", attempt + 1)
+                    time.sleep(request.poll_interval_s)
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+                attestation_status = data.get("status")
+                if data.get("status") == "complete":
+                    attestation_value = data.get("attestation")
+                    break
+                logger.info("Attestation status=%s attempt=%s", data.get("status"), attempt + 1)
                 time.sleep(request.poll_interval_s)
-                continue
-            if resp.status_code == 429:
-                logger.info("Attestation rate-limited (429) attempt=%s", attempt + 1)
-                time.sleep(request.poll_interval_s)
-                continue
-            resp.raise_for_status()
-            data = resp.json()
-            if data.get("status") == "complete":
-                attestation_value = data.get("attestation")
-                break
-            logger.info("Attestation status=%s attempt=%s", data.get("status"), attempt + 1)
-            time.sleep(request.poll_interval_s)
 
         if attestation_value is None:
-            return AttestationResponse(status="pending", message_hash=message_hash)
+            return AttestationResponse(
+                status="pending",
+                message_hash=message_hash,
+                attestation_source=attestation_source,
+                attestation_status=attestation_status,
+            )
 
         dest_transmitter_address = _CCTP_MESSAGE_TRANSMITTERS.get(destination_chain_id)
         if not dest_transmitter_address:
@@ -787,12 +911,12 @@ def attestation(request: AttestationRequest) -> AttestationResponse:
         dest_w3 = _get_web3(destination_chain_id)
         relayer = dest_w3.eth.account.from_key(_RELAYER_PRIVATE_KEY)
 
+        state = _get_attestation_state(message_hash)
+
         dest_transmitter = dest_w3.eth.contract(
             address=Web3.to_checksum_address(dest_transmitter_address),
             abi=_MESSAGE_TRANSMITTER_ABI,
         )
-        attestation_bytes = Web3.to_bytes(hexstr=attestation_value)
-        receive_fn = dest_transmitter.functions.receiveMessage(message, attestation_bytes)
 
         destination_executor = _DESTINATION_EXECUTOR_ADDRESSES.get(destination_chain_id)
         if not destination_executor:
@@ -802,63 +926,235 @@ def attestation(request: AttestationRequest) -> AttestationResponse:
         if destination_executor_checksum.lower() != mint_recipient.lower():
             raise HTTPException(status_code=400, detail="Mint recipient does not match DestinationExecutor")
 
-        gas_estimate = receive_fn.estimate_gas({"from": relayer.address})
         latest_block = dest_w3.eth.get_block("latest")
         priority_fee = dest_w3.eth.max_priority_fee
         base_fee = latest_block.get("baseFeePerGas")
+        amount_to_release = amount - fee_executed
 
-        base_nonce = dest_w3.eth.get_transaction_count(relayer.address, "pending")
-        tx_params: Dict[str, Any] = {
-            "from": relayer.address,
-            "nonce": base_nonce,
-            "chainId": destination_chain_id,
-            "gas": int(gas_estimate * 1.2),
-        }
-        if base_fee is not None:
-            tx_params["maxPriorityFeePerGas"] = priority_fee
-            tx_params["maxFeePerGas"] = base_fee * 2 + priority_fee
-        else:
-            tx_params["gasPrice"] = dest_w3.eth.gas_price
+        try:
+            nonce_used = dest_transmitter.functions.usedNonces(Web3.to_bytes(hexstr=nonce)).call() != 0
+        except Exception:
+            nonce_used = state.get("received", False)
 
-        receive_tx = receive_fn.build_transaction(tx_params)
-        signed_tx = relayer.sign_transaction(receive_tx)
-        destination_tx_hash = dest_w3.eth.send_raw_transaction(signed_tx.raw_transaction).hex()
+        destination_tx_hash = state.get("destination_tx_hash")
+        receive_confirmed = False
+        if destination_tx_hash:
+            receipt = _get_receipt_with_retries(
+                dest_w3,
+                destination_tx_hash,
+                _RECEIVE_RECEIPT_ATTEMPTS,
+                _RECEIVE_RECEIPT_INTERVAL_S,
+            )
+            if receipt and receipt.get("status") == 1:
+                receive_confirmed = True
+            elif receipt and receipt.get("status") == 0:
+                state["destination_tx_hash"] = None
+                state["received"] = False
+                destination_tx_hash = None
+            elif nonce_used:
+                receive_confirmed = True
+            else:
+                return AttestationResponse(
+                    status="pending",
+                    message_hash=message_hash,
+                    destination_tx_hash=destination_tx_hash,
+                    attestation_source=attestation_source,
+                    attestation_status=attestation_status,
+                    release_status="waiting_receive",
+                )
 
-        logger.info("receiveMessage tx sent: %s", destination_tx_hash)
+        if not receive_confirmed:
+            if nonce_used:
+                receive_confirmed = True
+            else:
+                attestation_bytes = Web3.to_bytes(hexstr=attestation_value)
+                receive_fn = dest_transmitter.functions.receiveMessage(message, attestation_bytes)
+                gas_estimate = receive_fn.estimate_gas({"from": relayer.address})
 
-        release_contract = dest_w3.eth.contract(
-            address=destination_executor_checksum,
-            abi=_DESTINATION_EXECUTOR_ABI,
+                base_nonce = dest_w3.eth.get_transaction_count(relayer.address, "pending")
+                tx_params: Dict[str, Any] = {
+                    "from": relayer.address,
+                    "nonce": base_nonce,
+                    "chainId": destination_chain_id,
+                    "gas": int(gas_estimate * 1.2),
+                }
+                if base_fee is not None:
+                    tx_params["maxPriorityFeePerGas"] = priority_fee
+                    tx_params["maxFeePerGas"] = base_fee * 2 + priority_fee
+                else:
+                    tx_params["gasPrice"] = dest_w3.eth.gas_price
+
+                receive_tx = receive_fn.build_transaction(tx_params)
+                signed_tx = relayer.sign_transaction(receive_tx)
+                destination_tx_hash = dest_w3.eth.send_raw_transaction(signed_tx.raw_transaction).hex()
+                logger.info("receiveMessage tx sent: %s", destination_tx_hash)
+                state["destination_tx_hash"] = destination_tx_hash
+                state["received"] = True
+                return AttestationResponse(
+                    status="pending",
+                    message_hash=message_hash,
+                    destination_tx_hash=destination_tx_hash,
+                    attestation_source=attestation_source,
+                    attestation_status=attestation_status,
+                    release_status="waiting_receive",
+                )
+
+        usdc_info = _lookup_token("USDC", destination_chain_id)
+        if not usdc_info:
+            raise HTTPException(status_code=500, detail="USDC not configured for destination chain")
+        usdc_contract = dest_w3.eth.contract(
+            address=Web3.to_checksum_address(usdc_info[0]),
+            abi=_ERC20_ABI,
         )
-        release_data = _encode_contract_call(
-            release_contract,
-            "release",
-            [release_recipient, amount - fee_executed],
-        )
-        release_tx_params: Dict[str, Any] = {
-            "from": relayer.address,
-            "to": destination_executor_checksum,
-            "data": release_data,
-            "nonce": base_nonce + 1,
-            "chainId": destination_chain_id,
-            "gas": _DESTINATION_RELEASE_GAS,
-            "value": 0,
-        }
-        if base_fee is not None:
-            release_tx_params["maxPriorityFeePerGas"] = priority_fee
-            release_tx_params["maxFeePerGas"] = base_fee * 2 + priority_fee
-        else:
-            release_tx_params["gasPrice"] = dest_w3.eth.gas_price
+        release_balance = int(usdc_contract.functions.balanceOf(destination_executor_checksum).call())
+        if release_balance < amount_to_release:
+            return AttestationResponse(
+                status="pending",
+                message_hash=message_hash,
+                destination_tx_hash=destination_tx_hash,
+                attestation_source=attestation_source,
+                attestation_status=attestation_status,
+                release_status="awaiting_balance",
+                release_balance=str(release_balance),
+                release_needed=str(amount_to_release),
+            )
 
-        release_signed = relayer.sign_transaction(release_tx_params)
-        release_tx_hash = dest_w3.eth.send_raw_transaction(release_signed.raw_transaction).hex()
-        logger.info("release tx sent: %s", release_tx_hash)
+        release_tx_hash = state.get("release_tx_hash")
+        release_failures = int(state.get("release_failures", 0))
+        if release_tx_hash:
+            release_receipt = _get_receipt_with_retries(
+                dest_w3,
+                release_tx_hash,
+                _RELEASE_RECEIPT_ATTEMPTS,
+                _RELEASE_RECEIPT_INTERVAL_S,
+            )
+            if release_receipt and release_receipt.get("status") == 1:
+                return AttestationResponse(
+                    status="complete",
+                    message_hash=message_hash,
+                    destination_tx_hash=destination_tx_hash,
+                    release_tx_hash=release_tx_hash,
+                    attestation_source=attestation_source,
+                    attestation_status=attestation_status,
+                    release_status="confirmed",
+                )
+            if release_receipt and release_receipt.get("status") == 0:
+                state["release_failures"] = release_failures + 1
+                state["release_tx_hash"] = None
+                state["checks"] = 0
+                release_tx_hash = None
+            else:
+                return AttestationResponse(
+                    status="pending",
+                    message_hash=message_hash,
+                    destination_tx_hash=destination_tx_hash,
+                    release_tx_hash=release_tx_hash,
+                    attestation_source=attestation_source,
+                    attestation_status=attestation_status,
+                    release_status="pending",
+                )
+
+        if release_failures > 0:
+            state["checks"] = int(state.get("checks", 0)) + 1
+            if state["checks"] % _RELEASE_DELAY_CHECKS != 0:
+                return AttestationResponse(
+                    status="pending",
+                    message_hash=message_hash,
+                    destination_tx_hash=destination_tx_hash,
+                    attestation_source=attestation_source,
+                    attestation_status=attestation_status,
+                    release_status="cooldown",
+                )
+
+        try:
+            release_contract = dest_w3.eth.contract(
+                address=destination_executor_checksum,
+                abi=_DESTINATION_EXECUTOR_ABI,
+            )
+            contract_relayer = release_contract.functions.relayer().call()
+            if Web3.to_checksum_address(contract_relayer) != relayer.address:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "DestinationExecutor relayer mismatch: "
+                        f"contract={contract_relayer} backend={relayer.address}"
+                    ),
+                )
+            release_data = _encode_contract_call(
+                release_contract,
+                "release",
+                [release_recipient, amount_to_release],
+            )
+            base_nonce = dest_w3.eth.get_transaction_count(relayer.address, "pending")
+            release_tx_params: Dict[str, Any] = {
+                "from": relayer.address,
+                "to": destination_executor_checksum,
+                "data": release_data,
+                "nonce": base_nonce,
+                "chainId": destination_chain_id,
+                "gas": _DESTINATION_RELEASE_GAS,
+                "value": 0,
+            }
+            if base_fee is not None:
+                release_tx_params["maxPriorityFeePerGas"] = priority_fee
+                release_tx_params["maxFeePerGas"] = base_fee * 2 + priority_fee
+            else:
+                release_tx_params["gasPrice"] = dest_w3.eth.gas_price
+
+            release_signed = relayer.sign_transaction(release_tx_params)
+            release_tx_hash = dest_w3.eth.send_raw_transaction(release_signed.raw_transaction).hex()
+            logger.info("release tx sent: %s", release_tx_hash)
+            state["release_tx_hash"] = release_tx_hash
+        except Exception as exc:
+            state["release_failures"] = release_failures + 1
+            state["checks"] = 0
+            logger.info("release attempt failed: %s", exc)
+            return AttestationResponse(
+                status="complete",
+                message_hash=message_hash,
+                destination_tx_hash=destination_tx_hash,
+                attestation_source=attestation_source,
+                attestation_status=attestation_status,
+                release_status="failed",
+            )
+
+        release_receipt = _get_receipt_with_retries(
+            dest_w3,
+            release_tx_hash,
+            _RELEASE_RECEIPT_ATTEMPTS,
+            _RELEASE_RECEIPT_INTERVAL_S,
+        )
+        if release_receipt and release_receipt.get("status") == 1:
+            return AttestationResponse(
+                status="complete",
+                message_hash=message_hash,
+                destination_tx_hash=destination_tx_hash,
+                release_tx_hash=release_tx_hash,
+                attestation_source=attestation_source,
+                attestation_status=attestation_status,
+                release_status="confirmed",
+            )
+        if release_receipt and release_receipt.get("status") == 0:
+            state["release_failures"] = release_failures + 1
+            state["release_tx_hash"] = None
+            state["checks"] = 0
+            return AttestationResponse(
+                status="complete",
+                message_hash=message_hash,
+                destination_tx_hash=destination_tx_hash,
+                attestation_source=attestation_source,
+                attestation_status=attestation_status,
+                release_status="failed",
+            )
 
         return AttestationResponse(
             status="complete",
             message_hash=message_hash,
             destination_tx_hash=destination_tx_hash,
             release_tx_hash=release_tx_hash,
+            attestation_source=attestation_source,
+            attestation_status=attestation_status,
+            release_status="pending",
         )
     except HTTPException:
         raise
