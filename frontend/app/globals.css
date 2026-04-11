@@ -12,3 +12,20 @@ select option {
   background-color: #0f1632;
   color: #e2e8ff;
 }
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Text selection */
+::selection {
+  background-color: rgba(247, 147, 26, 0.2);
+  color: #f0f4ff;
+}
+
+/* Minimal scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1e2d5a; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #263360; }
