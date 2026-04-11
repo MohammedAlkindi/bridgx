@@ -13,6 +13,7 @@ for path in (BACKEND_DIR, ROOT_DIR):
         sys.path.insert(0, str(path))
 
 from backend.api import app
+import backend.api as api
 
 
 client = TestClient(app)
@@ -223,6 +224,7 @@ def test_output_amount_validation_bad_chain_id_type() -> None:
 
 
 def test_token_price_ok() -> None:
+    api._TOKEN_PRICE_CACHE.clear()
     with patch("backend.api.provider.get_token_price") as mock_get_price:
         mock_get_price.return_value = "123.45"
         response = client.post("/provider/token-price", json=token_price_payload())
@@ -231,6 +233,7 @@ def test_token_price_ok() -> None:
 
 
 def test_token_price_provider_fail() -> None:
+    api._TOKEN_PRICE_CACHE.clear()
     with patch("backend.api.provider.get_token_price") as mock_get_price:
         mock_get_price.return_value = None
         response = client.post("/provider/token-price", json=token_price_payload())
@@ -238,6 +241,7 @@ def test_token_price_provider_fail() -> None:
 
 
 def test_token_price_invalid_value() -> None:
+    api._TOKEN_PRICE_CACHE.clear()
     with patch("backend.api.provider.get_token_price") as mock_get_price:
         mock_get_price.return_value = "not-a-number"
         response = client.post("/provider/token-price", json=token_price_payload())
@@ -259,6 +263,7 @@ def test_token_price_validation_bad_chain_id() -> None:
 
 
 def test_token_price_get_ok() -> None:
+    api._TOKEN_PRICE_CACHE.clear()
     with patch("backend.api.provider.get_token_price") as mock_get_price:
         mock_get_price.return_value = 42.0
         response = client.get("/token-price", params=token_price_payload())
@@ -266,7 +271,17 @@ def test_token_price_get_ok() -> None:
     assert response.json() == pytest.approx(42.0)
 
 
+def test_token_price_post_ok() -> None:
+    api._TOKEN_PRICE_CACHE.clear()
+    with patch("backend.api.provider.get_token_price") as mock_get_price:
+        mock_get_price.return_value = 42.0
+        response = client.post("/token-price", json=token_price_payload())
+    assert response.status_code == 200
+    assert response.json() == pytest.approx(42.0)
+
+
 def test_token_price_get_provider_fail() -> None:
+    api._TOKEN_PRICE_CACHE.clear()
     with patch("backend.api.provider.get_token_price") as mock_get_price:
         mock_get_price.return_value = None
         response = client.get("/token-price", params=token_price_payload())
@@ -274,6 +289,7 @@ def test_token_price_get_provider_fail() -> None:
 
 
 def test_token_price_get_invalid_value() -> None:
+    api._TOKEN_PRICE_CACHE.clear()
     with patch("backend.api.provider.get_token_price") as mock_get_price:
         mock_get_price.return_value = "bad"
         response = client.get("/token-price", params=token_price_payload())
@@ -351,4 +367,95 @@ def test_get_tokens_load_error() -> None:
     with patch("backend.api._load_tokens") as mock_tokens:
         mock_tokens.side_effect = RuntimeError("boom")
         response = client.get("/tokens")
+    assert response.status_code == 502
+
+
+def test_get_networks_ok() -> None:
+    response = client.get("/networks")
+    assert response.status_code == 200
+    data = response.json()
+    assert any(network["name"] == "avalanche" for network in data)
+    assert any(network["name"] == "base" for network in data)
+    assert any(network["name"] == "arbitrum" for network in data)
+
+
+def test_token_balance_ok() -> None:
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"result": "0x10"}
+
+    with patch("backend.api._requests.post") as mock_post:
+        mock_post.return_value = FakeResponse()
+        response = client.get(
+            "/token-balance",
+            params={
+                "token_address": "0x1234567890abcdef1234567890abcdef12345678",
+                "wallet_address": "0x0000000000000000000000000000000000000001",
+                "chain_id": 43114,
+            },
+        )
+    assert response.status_code == 200
+    assert response.json()["balance"] == "16"
+
+
+def test_token_balance_unsupported_chain() -> None:
+    response = client.get(
+        "/token-balance",
+        params={
+            "token_address": "0x1234567890abcdef1234567890abcdef12345678",
+            "wallet_address": "0x0000000000000000000000000000000000000001",
+            "chain_id": 999,
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_token_balance_rpc_error() -> None:
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"error": {"message": "boom"}}
+
+    with patch("backend.api._requests.post") as mock_post:
+        mock_post.return_value = FakeResponse()
+        response = client.get(
+            "/token-balance",
+            params={
+                "token_address": "0x1234567890abcdef1234567890abcdef12345678",
+                "wallet_address": "0x0000000000000000000000000000000000000001",
+                "chain_id": 43114,
+            },
+        )
+    assert response.status_code == 502
+
+
+def test_token_balance_invalid_result() -> None:
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"result": None}
+
+    with patch("backend.api._requests.post") as mock_post:
+        mock_post.return_value = FakeResponse()
+        response = client.get(
+            "/token-balance",
+            params={
+                "token_address": "0x1234567890abcdef1234567890abcdef12345678",
+                "wallet_address": "0x0000000000000000000000000000000000000001",
+                "chain_id": 43114,
+            },
+        )
     assert response.status_code == 502

@@ -18,6 +18,22 @@ html {
   scroll-behavior: smooth;
 }
 
+:root {
+  --nav-link-color: #7a90b8;
+  --nav-link-hover-color: #cc7810;
+  --brand-accent-color: #F7931A;
+}
+
+.nav-link {
+  color: var(--nav-link-color);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.nav-link:hover {
+  color: var(--nav-link-hover-color);
+}
+
 /* Text selection */
 ::selection {
   background-color: rgba(247, 147, 26, 0.2);
