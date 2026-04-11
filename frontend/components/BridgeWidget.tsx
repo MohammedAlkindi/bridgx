@@ -26,7 +26,7 @@ type BridgeWidgetProps = {
   infoMessage?: string;
   /** Error message — quote failure, bridge error, etc. */
   errorMessage?: string;
-  walletBalanceSats?: number;
+  walletBalanceTokens?: string;
   usdRate?: number;
   onSourceChainChange: (chain: SupportedChain) => void;
   onDestinationChainChange: (chain: SupportedChain) => void;
@@ -39,16 +39,16 @@ type BridgeWidgetProps = {
 };
 
 const CHAIN_LABELS: Record<SupportedChain, string> = {
+  avalanche: "Avalanche",
   base: "Base",
   arbitrum: "Arbitrum",
-  optimism: "Optimism",
 };
 
 /** Network brand colors — used for the chain indicator dot */
 const CHAIN_COLORS: Record<SupportedChain, string> = {
+  avalanche: "#e84142",
   base: "#0052ff",
   arbitrum: "#28a0f0",
-  optimism: "#ff0420",
 };
 
 function formatExpiry(iso: string): string {
@@ -59,8 +59,8 @@ function formatExpiry(iso: string): string {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-function satsToUsd(sats: number, usdPerBtc: number): string {
-  return (sats / 1e8 * usdPerBtc).toLocaleString("en-US", {
+function tokenToUsd(amount: number, usdPerBtc: number): string {
+  return (amount * usdPerBtc).toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: 2,
@@ -69,6 +69,24 @@ function satsToUsd(sats: number, usdPerBtc: number): string {
 
 function formatTokenLabel(token: TokenInfo): string {
   return token.symbol ?? token.name ?? token.address;
+}
+
+function formatScaledAmount(amountScaled: string): string {
+  if (!amountScaled) return "0";
+  try {
+    const raw = BigInt(amountScaled);
+    const scale = 100000000n;
+    const whole = raw / scale;
+    const fraction = raw % scale;
+    if (fraction === 0n) return whole.toString();
+    let fractionStr = fraction.toString().padStart(8, "0").replace(/0+$/, "");
+    if (fractionStr.length > 6) {
+      fractionStr = fractionStr.slice(0, 6);
+    }
+    return `${whole}.${fractionStr}`;
+  } catch {
+    return amountScaled;
+  }
 }
 
 export default function BridgeWidget({
@@ -88,7 +106,7 @@ export default function BridgeWidget({
   fieldErrors,
   infoMessage,
   errorMessage,
-  walletBalanceSats,
+  walletBalanceTokens,
   usdRate,
   onSourceChainChange,
   onDestinationChainChange,
@@ -107,12 +125,13 @@ export default function BridgeWidget({
     : "Select token";
 
   const amountNum = Number(amountSats);
-  const amountUsd = usdRate && amountSats && Number.isFinite(amountNum) && amountNum > 0
-    ? satsToUsd(amountNum, usdRate)
+  const showUsd = usdRate !== undefined && sourceToken.toUpperCase().includes("BTC");
+  const amountUsd = showUsd && amountSats && Number.isFinite(amountNum) && amountNum > 0
+    ? tokenToUsd(amountNum, usdRate!)
     : null;
 
-  const balanceUsd = usdRate && walletBalanceSats !== undefined
-    ? satsToUsd(walletBalanceSats, usdRate)
+  const balanceUsd = showUsd && walletBalanceTokens !== undefined
+    ? tokenToUsd(Number(walletBalanceTokens), usdRate!)
     : null;
 
   return (
@@ -273,7 +292,7 @@ export default function BridgeWidget({
         {/* Amount */}
         <div>
           <label htmlFor="amount-sats" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[#5a6d9a]">
-            Amount
+            Amount {sourceToken ? `(${sourceToken})` : ""}
           </label>
           <div className="relative">
             <input
@@ -286,25 +305,27 @@ export default function BridgeWidget({
               className="w-full rounded-lg border border-[#1e2d5a] bg-[#090e1f] py-2.5 pl-3 pr-24 text-sm text-[#e2e8ff] placeholder-[#3d5070] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20"
             />
             <div className="absolute inset-y-0 right-3 flex items-center gap-2">
-              {walletBalanceSats !== undefined && (
+              {walletBalanceTokens !== undefined && (
                 <button
                   type="button"
-                  onClick={() => onAmountSatsChange(String(walletBalanceSats))}
+                  onClick={() => onAmountSatsChange(String(walletBalanceTokens))}
                   className="text-[10px] font-bold leading-none px-1.5 py-0.5 rounded border border-[#F7931A]/30 text-[#F7931A] hover:bg-[#F7931A]/10 transition-colors"
                 >
                   MAX
                 </button>
               )}
-              <span className="text-xs font-medium text-[#4a5a8a]">sats</span>
+              <span className="text-xs font-medium text-[#4a5a8a]">{sourceToken || "token"}</span>
             </div>
           </div>
 
           {/* Balance + USD hint */}
           <div className="mt-1.5 flex items-center justify-between text-xs">
-            {walletBalanceSats !== undefined ? (
+            {walletBalanceTokens !== undefined ? (
               <span className="text-[#3d5070]">
                 Balance:{" "}
-                <span className="text-[#5a6d9a]">{walletBalanceSats.toLocaleString()} sats</span>
+                <span className="text-[#5a6d9a]">
+                  {walletBalanceTokens} {sourceToken || ""}
+                </span>
                 {balanceUsd && <span className="text-[#3d5070]"> ≈ {balanceUsd}</span>}
               </span>
             ) : (
@@ -362,10 +383,10 @@ export default function BridgeWidget({
               <div className="flex justify-between items-center px-4 py-2.5">
                 <span className="text-sm text-[#5a6d9a]">You send</span>
                 <span className="text-sm font-medium text-[#e2e8ff]">
-                  {Number(quote.sourceAmountSats).toLocaleString()} sats
-                  {usdRate && (
+                  {formatScaledAmount(quote.sourceAmountSats)} {sourceToken || ""}
+                  {showUsd && (
                     <span className="ml-1.5 text-xs text-[#4a5a8a]">
-                      ({satsToUsd(Number(quote.sourceAmountSats), usdRate)})
+                      ({tokenToUsd(Number(formatScaledAmount(quote.sourceAmountSats)), usdRate!)})
                     </span>
                   )}
                 </span>
@@ -373,10 +394,10 @@ export default function BridgeWidget({
               <div className="flex justify-between items-center px-4 py-2.5">
                 <span className="text-sm text-[#5a6d9a]">You receive</span>
                 <span className="text-sm font-medium text-emerald-400">
-                  {Number(quote.destinationAmountSats).toLocaleString()} sats
-                  {usdRate && (
+                  {formatScaledAmount(quote.destinationAmountSats)} {destinationToken || ""}
+                  {showUsd && (
                     <span className="ml-1.5 text-xs text-emerald-700">
-                      ({satsToUsd(Number(quote.destinationAmountSats), usdRate)})
+                      ({tokenToUsd(Number(formatScaledAmount(quote.destinationAmountSats)), usdRate!)})
                     </span>
                   )}
                 </span>

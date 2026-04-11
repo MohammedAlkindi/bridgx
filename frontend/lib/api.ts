@@ -1,8 +1,10 @@
 import type {
   BridgeInitiateRequest,
   BridgeInitiateResponse,
+  NetworkInfo,
   QuoteRequest,
   QuoteResponse,
+  TokenBalanceResponse,
   TokenInfo,
   TransferReceiptResponse,
   TransferStatusResponse,
@@ -160,4 +162,28 @@ export async function getTokens(): Promise<TokenInfo[]> {
   }
 
   return requestJson<TokenInfo[]>("/tokens");
+}
+
+export async function getNetworks(): Promise<NetworkInfo[]> {
+  if (MOCK_API_ENABLED) {
+    try {
+      return await requestJson<NetworkInfo[]>("/networks");
+    } catch {
+      return [];
+    }
+  }
+
+  return requestJson<NetworkInfo[]>("/networks");
+}
+
+export async function getTokenBalance(
+  tokenAddress: string,
+  walletAddress: string,
+  chainId: number,
+): Promise<TokenBalanceResponse> {
+  return requestJson<TokenBalanceResponse>(
+    `/token-balance?token_address=${encodeURIComponent(tokenAddress)}&wallet_address=${encodeURIComponent(
+      walletAddress,
+    )}&chain_id=${chainId}`,
+  );
 }

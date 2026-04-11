@@ -4,26 +4,70 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import BridgeWidget from "../components/BridgeWidget";
 import WalletButton from "../components/WalletButton";
-import { getBtcUsdRate, getQuote, getTokens, initiateBridge } from "../lib/api";
+import { getBtcUsdRate, getNetworks, getQuote, getTokenBalance, getTokens, initiateBridge } from "../lib/api";
 import { connectMetaMask, isValidEvmAddress, type WalletState } from "../lib/wallet";
-import { SUPPORTED_CHAINS, type QuoteResponse, type SupportedChain, type TokenInfo } from "../types";
+import {
+  SUPPORTED_CHAINS,
+  type NetworkInfo,
+  type QuoteResponse,
+  type SupportedChain,
+  type TokenInfo,
+} from "../types";
 
 const QUOTE_DEBOUNCE_MS = 600;
-const MOCK_WALLET_BALANCE_SATS = 500_000; // 0.005 BTC — shown when wallet is connected
+const SATS_MULTIPLIER = 100000000n;
+
+type EthereumProvider = {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  on?: (event: string, handler: (...args: unknown[]) => void) => void;
+  removeListener?: (event: string, handler: (...args: unknown[]) => void) => void;
+};
+
+function getEthereumProvider(): EthereumProvider | null {
+  if (typeof window === "undefined" || !("ethereum" in window)) return null;
+  return window.ethereum as EthereumProvider;
+}
+
+function buildBalanceOfCall(address: string): string {
+  const clean = address.toLowerCase().replace(/^0x/, "");
+  return `0x70a08231${clean.padStart(64, "0")}`;
+}
+
+function parseScaledAmount(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
+  const [whole, frac = ""] = trimmed.split(".");
+  const fracPadded = (frac + "00000000").slice(0, 8);
+  const scaled = BigInt(whole) * SATS_MULTIPLIER + BigInt(fracPadded);
+  return scaled.toString();
+}
+
+function formatTokenBalance(raw: bigint, decimals: number, maxDecimals = 6): string {
+  const divisor = 10n ** BigInt(decimals);
+  const whole = raw / divisor;
+  const fraction = raw % divisor;
+  if (fraction === 0n) return whole.toString();
+  let fractionStr = fraction.toString().padStart(decimals, "0").replace(/0+$/, "");
+  if (fractionStr.length > maxDecimals) {
+    fractionStr = fractionStr.slice(0, maxDecimals);
+  }
+  return `${whole}.${fractionStr}`;
+}
 
 type FieldErrors = Partial<
   Record<"sourceChain" | "destinationChain" | "amountSats" | "recipientAddress", string>
 >;
 
 const CHAIN_ID_TO_NAME: Record<number, SupportedChain> = {
+  43114: "avalanche",
   8453: "base",
   42161: "arbitrum",
-  10: "optimism",
 };
 
 function resolveTokenChain(token: TokenInfo): SupportedChain | null {
   const chainName = token.chain_name?.toLowerCase();
-  if (chainName === "base" || chainName === "arbitrum" || chainName === "optimism") {
+  if (chainName === "avalanche" || chainName === "base" || chainName === "arbitrum") {
     return chainName;
   }
   return CHAIN_ID_TO_NAME[token.chain_id] ?? null;
@@ -45,7 +89,7 @@ function getFieldErrors(
   }
   const sats = Number(amountSats);
   if (amountSats !== "" && (!Number.isFinite(sats) || sats <= 0)) {
-    errors.amountSats = "Enter a positive satoshi amount.";
+    errors.amountSats = "Enter a positive token amount.";
   }
   if (recipientAddress !== "" && !isValidEvmAddress(recipientAddress)) {
     errors.recipientAddress = "Enter a valid 0x\u2026 address.";
@@ -75,8 +119,9 @@ export default function HomePage() {
   const router = useRouter();
 
   const [wallet, setWallet] = useState<WalletState>({ status: "disconnected" });
-  const [sourceChain, setSourceChain] = useState<SupportedChain>("base");
-  const [destinationChain, setDestinationChain] = useState<SupportedChain>("arbitrum");
+  const [sourceChain, setSourceChain] = useState<SupportedChain>("avalanche");
+  const [destinationChain, setDestinationChain] = useState<SupportedChain>("base");
+  const [chainOptions, setChainOptions] = useState<SupportedChain[]>(SUPPORTED_CHAINS);
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
   const [sourceToken, setSourceToken] = useState("");
   const [destinationToken, setDestinationToken] = useState("");
@@ -87,6 +132,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [usdRate, setUsdRate] = useState<number | undefined>();
+  const [walletBalanceTokens, setWalletBalanceTokens] = useState<string | undefined>();
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -95,6 +141,93 @@ export default function HomePage() {
     getBtcUsdRate()
       .then(setUsdRate)
       .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    getNetworks()
+      .then((networks) => {
+        const names = networks
+          .map((network: NetworkInfo) => network.name)
+          .filter((name): name is SupportedChain => SUPPORTED_CHAINS.includes(name));
+        setChainOptions(names.length ? names : SUPPORTED_CHAINS);
+      })
+      .catch(() => setChainOptions(SUPPORTED_CHAINS));
+  }, []);
+
+  useEffect(() => {
+    if (!chainOptions.length) return;
+    if (!chainOptions.includes(sourceChain)) {
+      setSourceChain(chainOptions[0]);
+    }
+    if (!chainOptions.includes(destinationChain) || destinationChain === sourceChain) {
+      const fallback = chainOptions.find((chain) => chain !== sourceChain) ?? chainOptions[0];
+      setDestinationChain(fallback);
+    }
+  }, [chainOptions, destinationChain, sourceChain]);
+
+  useEffect(() => {
+    const ethereum = getEthereumProvider();
+    if (!ethereum) return;
+
+    const syncAccounts = async () => {
+      try {
+        const accounts = (await ethereum.request({
+          method: "eth_accounts",
+        })) as string[];
+        if (!accounts || accounts.length === 0) {
+          setWallet({ status: "disconnected" });
+          setWalletBalanceTokens(undefined);
+          return;
+        }
+        const address = accounts[0];
+        if (!isValidEvmAddress(address)) {
+          setWallet({ status: "disconnected" });
+          setWalletBalanceTokens(undefined);
+          setErrorMessage("Invalid address returned from MetaMask.");
+          return;
+        }
+        setWallet({ status: "connected", address });
+      } catch (err) {
+        setWallet({ status: "disconnected" });
+        setWalletBalanceTokens(undefined);
+        setErrorMessage(err instanceof Error ? err.message : "Failed to read MetaMask accounts.");
+      }
+    };
+
+    const handleAccountsChanged = (accounts: unknown) => {
+      const list = Array.isArray(accounts) ? (accounts as string[]) : [];
+      if (list.length === 0) {
+        setWallet({ status: "disconnected" });
+        setWalletBalanceTokens(undefined);
+        setQuote(undefined);
+        return;
+      }
+      const address = list[0];
+      if (isValidEvmAddress(address)) {
+        setWallet({ status: "connected", address });
+        setQuote(undefined);
+        return;
+      }
+      setWallet({ status: "disconnected" });
+      setWalletBalanceTokens(undefined);
+      setErrorMessage("Invalid address returned from MetaMask.");
+    };
+
+    const handleDisconnect = () => {
+      setWallet({ status: "disconnected" });
+          setWalletBalanceTokens(undefined);
+      setQuote(undefined);
+    };
+
+    void syncAccounts();
+
+    ethereum.on?.("accountsChanged", handleAccountsChanged);
+    ethereum.on?.("disconnect", handleDisconnect);
+
+    return () => {
+      ethereum.removeListener?.("accountsChanged", handleAccountsChanged);
+      ethereum.removeListener?.("disconnect", handleDisconnect);
+    };
   }, []);
 
   useEffect(() => {
@@ -128,6 +261,38 @@ export default function HomePage() {
     }
   }, [destinationChain, destinationTokenOptions, destinationToken]);
 
+  const sourceTokenInfo = sourceTokenOptions.find((token) => tokenLabel(token) === sourceToken);
+
+  useEffect(() => {
+    if (!wallet.address || !sourceTokenInfo) {
+      setWalletBalanceTokens(undefined);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadBalance = async () => {
+      try {
+        const response = await getTokenBalance(
+          sourceTokenInfo.address,
+          wallet.address,
+          sourceTokenInfo.chain_id,
+        );
+        const raw = BigInt(response.balance);
+        const balance = formatTokenBalance(raw, sourceTokenInfo.decimals);
+        if (!cancelled) setWalletBalanceTokens(balance);
+      } catch {
+        if (!cancelled) setWalletBalanceTokens(undefined);
+      }
+    };
+
+    void loadBalance();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet.address, sourceTokenInfo?.address, sourceTokenInfo?.decimals, sourceTokenInfo?.chain_id]);
+
   const fieldErrors = getFieldErrors(sourceChain, destinationChain, amountSats, recipientAddress);
   const hasErrors = Object.keys(fieldErrors).length > 0;
   const formComplete = isFormComplete(
@@ -151,12 +316,18 @@ export default function HomePage() {
     debounceRef.current = setTimeout(() => {
       setLoading(true);
       setErrorMessage("");
+      const scaledAmount = parseScaledAmount(amountSats);
+      if (!scaledAmount) {
+        setLoading(false);
+        setErrorMessage("Enter a valid token amount.");
+        return;
+      }
       getQuote({
         sourceChain,
         destinationChain,
         sourceToken,
         destinationToken,
-        amountSats,
+        amountSats: scaledAmount,
         walletAddress: wallet.address!,
       })
         .then((result) => setQuote(result))
@@ -186,6 +357,7 @@ export default function HomePage() {
     try {
       const address = await connectMetaMask();
       setWallet({ status: "connected", address });
+      setErrorMessage("");
     } catch (err) {
       setWallet({ status: "disconnected" });
       setErrorMessage(err instanceof Error ? err.message : "Failed to connect wallet.");
@@ -194,6 +366,7 @@ export default function HomePage() {
 
   const handleDisconnect = useCallback(() => {
     setWallet({ status: "disconnected" });
+    setWalletBalanceTokens(undefined);
     setQuote(undefined);
     setErrorMessage("");
   }, []);
@@ -272,7 +445,7 @@ export default function HomePage() {
           destinationToken={destinationToken}
           amountSats={amountSats}
           recipientAddress={recipientAddress}
-          chainOptions={SUPPORTED_CHAINS}
+          chainOptions={chainOptions}
           sourceTokenOptions={sourceTokenOptions}
           destinationTokenOptions={destinationTokenOptions}
           quote={quote}
@@ -282,7 +455,7 @@ export default function HomePage() {
           fieldErrors={hasErrors ? fieldErrors : undefined}
           infoMessage={!wallet.address ? "Connect your wallet to get a live quote." : undefined}
           errorMessage={wallet.address ? errorMessage || undefined : undefined}
-          walletBalanceSats={wallet.status === "connected" ? MOCK_WALLET_BALANCE_SATS : undefined}
+          walletBalanceTokens={wallet.status === "connected" ? walletBalanceTokens : undefined}
           usdRate={usdRate}
           onSourceChainChange={(chain) => {
             setSourceChain(chain);
