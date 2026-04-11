@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -255,3 +256,99 @@ def test_token_price_validation_bad_chain_id() -> None:
     payload["chain_id"] = "nope"
     response = client.post("/provider/token-price", json=payload)
     assert response.status_code == 422
+
+
+def test_token_price_get_ok() -> None:
+    with patch("backend.api.provider.get_token_price") as mock_get_price:
+        mock_get_price.return_value = 42.0
+        response = client.get("/token-price", params=token_price_payload())
+    assert response.status_code == 200
+    assert response.json() == pytest.approx(42.0)
+
+
+def test_token_price_get_provider_fail() -> None:
+    with patch("backend.api.provider.get_token_price") as mock_get_price:
+        mock_get_price.return_value = None
+        response = client.get("/token-price", params=token_price_payload())
+    assert response.status_code == 502
+
+
+def test_token_price_get_invalid_value() -> None:
+    with patch("backend.api.provider.get_token_price") as mock_get_price:
+        mock_get_price.return_value = "bad"
+        response = client.get("/token-price", params=token_price_payload())
+    assert response.status_code == 502
+
+
+def test_token_price_get_validation_missing_param() -> None:
+    response = client.get("/token-price", params={"chain_id": 43114})
+    assert response.status_code == 422
+
+
+def test_token_price_get_validation_bad_chain_id() -> None:
+    response = client.get(
+        "/token-price",
+        params={"token_address": "0x1234567890abcdef1234567890abcdef12345678", "chain_id": "nope"},
+    )
+    assert response.status_code == 422
+
+
+def test_get_tokens_ok() -> None:
+    tokens = [
+        SimpleNamespace(
+            address="0x1111111111111111111111111111111111111111",
+            symbol="USDC",
+            name="usdc",
+            decimals=6,
+            chain_id=43114,
+            chain_name="avalanche",
+        ),
+        SimpleNamespace(
+            address="0x2222222222222222222222222222222222222222",
+            symbol="BTCB",
+            name="btcb",
+            decimals=8,
+            chain_id=43114,
+            chain_name="avalanche",
+        ),
+    ]
+    with patch("backend.api._load_tokens") as mock_tokens:
+        mock_tokens.return_value = tokens
+        response = client.get("/tokens")
+    assert response.status_code == 200
+    data = response.json()
+    assert data[0]["address"] == tokens[0].address
+    assert data[0]["symbol"] == tokens[0].symbol
+    assert data[0]["decimals"] == tokens[0].decimals
+
+
+def test_get_tokens_empty() -> None:
+    with patch("backend.api._load_tokens") as mock_tokens:
+        mock_tokens.return_value = []
+        response = client.get("/tokens")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_get_tokens_invalid_data() -> None:
+    tokens = [
+        SimpleNamespace(
+            address=None,
+            symbol="USDC",
+            name="usdc",
+            decimals=6,
+            chain_id=43114,
+            chain_name="avalanche",
+        )
+    ]
+    with patch("backend.api._load_tokens") as mock_tokens:
+        mock_tokens.return_value = tokens
+        response = client.get("/tokens")
+    assert response.status_code == 502
+
+
+def test_get_tokens_load_error() -> None:
+    with patch("backend.api._load_tokens") as mock_tokens:
+        mock_tokens.side_effect = RuntimeError("boom")
+        response = client.get("/tokens")
+    assert response.status_code == 502
