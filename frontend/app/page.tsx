@@ -220,7 +220,7 @@ export default function HomePage() {
   const [wallet, setWallet] = useState<WalletState>({ status: "disconnected" });
   const [sourceChain, setSourceChain] = useState<SupportedChain>("avalanche");
   const [destinationChain, setDestinationChain] = useState<SupportedChain>("base");
-  const [chainOptions, setChainOptions] = useState<SupportedChain[]>(SUPPORTED_CHAINS);
+  const [chainOptions, setChainOptions] = useState<SupportedChain[]>([...SUPPORTED_CHAINS]);
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
   const [sourceToken, setSourceToken] = useState("");
   const [destinationToken, setDestinationToken] = useState("");
