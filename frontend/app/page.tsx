@@ -1,16 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import BridgeWidget from "../components/BridgeWidget";
 import WalletButton from "../components/WalletButton";
 import {
+  assembleTx,
   getNetworks,
   getQuote,
+  getReceipt,
   getTokenBalance,
   getTokenPrice,
   getTokens,
-  initiateBridge,
+  requestAttestation,
 } from "../lib/api";
 import {
   connectMetaMask,
@@ -21,9 +22,11 @@ import {
 } from "../lib/wallet";
 import {
   SUPPORTED_CHAINS,
+  type AssembledTransaction,
   type NetworkInfo,
   type QuoteResponse,
   type SupportedChain,
+  type TxHash,
   type TokenInfo,
 } from "../types";
 
@@ -64,6 +67,33 @@ function parseAmountToBaseUnits(amount: string, decimals: number): bigint | null
   const padded = decimals > 0 ? (frac + "0".repeat(decimals)).slice(0, decimals) : "";
   const base = BigInt(whole) * 10n ** BigInt(decimals) + (padded ? BigInt(padded) : 0n);
   return base;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function toHex(value: string | number | bigint): string {
+  if (typeof value === "string") {
+    if (value.startsWith("0x")) return value;
+    return `0x${BigInt(value).toString(16)}`;
+  }
+  return `0x${BigInt(value).toString(16)}`;
+}
+
+function normalizeTransaction(tx: AssembledTransaction, from: string) {
+  const normalized: Record<string, string> = {
+    from,
+    to: tx.to,
+    data: tx.data,
+  };
+  if (tx.value !== undefined) normalized.value = toHex(tx.value);
+  if (tx.gas !== undefined) normalized.gas = toHex(tx.gas);
+  if (tx.gasPrice !== undefined) normalized.gasPrice = toHex(tx.gasPrice);
+  if (tx.maxFeePerGas !== undefined) normalized.maxFeePerGas = toHex(tx.maxFeePerGas);
+  if (tx.maxPriorityFeePerGas !== undefined) {
+    normalized.maxPriorityFeePerGas = toHex(tx.maxPriorityFeePerGas);
+  }
+  if (tx.chainId !== undefined) normalized.chainId = toHex(tx.chainId);
+  return normalized;
 }
 
 
@@ -144,7 +174,6 @@ function isFormComplete(
 }
 
 export default function HomePage() {
-  const router = useRouter();
 
   const [wallet, setWallet] = useState<WalletState>({ status: "disconnected" });
   const [sourceChain, setSourceChain] = useState<SupportedChain>("avalanche");
@@ -163,6 +192,8 @@ export default function HomePage() {
   const [walletBalanceTokens, setWalletBalanceTokens] = useState<string | undefined>();
   const [walletBalanceRaw, setWalletBalanceRaw] = useState<bigint | undefined>();
   const [shouldPromptConnect, setShouldPromptConnect] = useState(false);
+  const [bridgeStatus, setBridgeStatus] = useState<string | undefined>();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const walletAddressRef = useRef<string | undefined>();
@@ -395,7 +426,9 @@ export default function HomePage() {
     amountBaseUnits !== null &&
     walletBalanceRaw !== undefined &&
     amountBaseUnits > walletBalanceRaw;
-  const canSubmit = isWalletConnected ? quoteReady && !!quote && !insufficientFunds : true;
+  const canSubmit = isWalletConnected
+    ? quoteReady && !!quote && !insufficientFunds && !isSubmitting
+    : true;
   const ctaLabel = !isWalletConnected
     ? "Connect wallet"
     : insufficientFunds
@@ -506,21 +539,86 @@ export default function HomePage() {
 
   const handleSubmit = useCallback(async () => {
     if (!wallet.address) return;
-    if (!quoteReady || !quote || insufficientFunds) return;
+    if (!quoteReady || !quote || insufficientFunds || isSubmitting) return;
 
-    setLoading(true);
+    const ethereum = getEthereumProvider();
+    if (!ethereum) {
+      setErrorMessage("MetaMask is not available.");
+      return;
+    }
+
+    setIsSubmitting(true);
     setErrorMessage("");
+    setBridgeStatus("Preparing transaction...");
     try {
-      const response = await initiateBridge({
+      const assembled = await assembleTx({
         quoteId: quote.quoteId,
         walletAddress: wallet.address,
       });
-      router.push(`/bridge/${response.transferId}`);
+      const txParams = normalizeTransaction(assembled, wallet.address);
+      const txHash = (await ethereum.request({
+        method: "eth_sendTransaction",
+        params: [txParams],
+      })) as string;
+      setBridgeStatus(`Source tx submitted: ${txHash}`);
+
+      let attestation;
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        attestation = await requestAttestation({
+          sourceTxHash: txHash as TxHash,
+          sourceChain,
+          destinationChain,
+          pollAttempts: 1,
+          pollIntervalS: 5,
+        });
+        if (attestation.status === "complete" && attestation.destinationTxHash) {
+          break;
+        }
+        setBridgeStatus("Waiting for attestation...");
+        await sleep(5000);
+      }
+
+      if (!attestation || attestation.status !== "complete" || !attestation.destinationTxHash) {
+        setBridgeStatus("Attestation pending. Check again shortly.");
+        return;
+      }
+
+      const destinationTxHash = attestation.destinationTxHash;
+      setBridgeStatus(`Destination tx submitted: ${destinationTxHash}`);
+
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const receipt = await getReceipt({
+          txHash: destinationTxHash,
+          chain: destinationChain,
+        });
+        if (receipt.status === "pending") {
+          await sleep(5000);
+          continue;
+        }
+        if (receipt.status === "confirmed") {
+          setBridgeStatus(`Transfer complete. Destination tx: ${destinationTxHash}`);
+        } else {
+          setBridgeStatus("Transfer failed.");
+        }
+        return;
+      }
+
+      setBridgeStatus(`Destination tx pending: ${destinationTxHash}`);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : "Bridge initiation failed.");
-      setLoading(false);
+      setBridgeStatus(undefined);
+    } finally {
+      setIsSubmitting(false);
     }
-  }, [insufficientFunds, quoteReady, quote, router, wallet.address]);
+  }, [
+    destinationChain,
+    insufficientFunds,
+    isSubmitting,
+    quote,
+    quoteReady,
+    sourceChain,
+    wallet.address,
+  ]);
 
   return (
     <section>
@@ -575,7 +673,7 @@ export default function HomePage() {
           loading={loading}
           canSubmit={canSubmit}
           fieldErrors={hasErrors ? fieldErrors : undefined}
-          infoMessage={undefined}
+          infoMessage={bridgeStatus}
           errorMessage={wallet.address ? errorMessage || undefined : undefined}
           walletBalanceTokens={wallet.status === "connected" ? walletBalanceTokens : undefined}
           tokenUsdPrice={tokenUsdPrice}

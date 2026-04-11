@@ -1,3 +1,5 @@
+import json
+import os
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -8,8 +10,12 @@ import requests as _requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
+from web3 import Web3
+from web3.exceptions import TransactionNotFound
+from web3.middleware.proof_of_authority import ExtraDataToPOAMiddleware
 
 from .libs import provider
+from .libs import quote_store
 
 app = FastAPI(title="Provider API")
 
@@ -66,6 +72,23 @@ _CHAIN_RPC_URLS: Dict[int, str] = {
     42161: "https://arb1.arbitrum.io/rpc",
 }
 
+_CCTP_MESSAGE_TRANSMITTERS: Dict[int, str] = {
+    43114: os.getenv("AVALANCHE_MESSAGE_TRANSMITTER", "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64"),
+    8453: os.getenv("BASE_MESSAGE_TRANSMITTER", "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64"),
+    42161: os.getenv("ARBITRUM_MESSAGE_TRANSMITTER", "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64"),
+}
+
+_CCTP_DOMAIN_IDS: Dict[int, int] = {
+    43114: 1,  # Avalanche
+    8453: 6,   # Base
+    42161: 3,  # Arbitrum
+}
+
+_RELAYER_PRIVATE_KEY = os.getenv("RELAYER_PRIVATE_KEY") or os.getenv("DEPLOYER_PRIVATE_KEY")
+_IRIS_BASE_URL = "https://iris-api.circle.com/attestations"
+_ATTESTATION_POLL_ATTEMPTS = int(os.getenv("ATTESTATION_POLL_ATTEMPTS", "60"))
+_ATTESTATION_POLL_INTERVAL_S = int(os.getenv("ATTESTATION_POLL_INTERVAL_S", "5"))
+
 
 def _lookup_token(symbol: str, chain_id: int) -> Optional[tuple]:
     """Return (address, decimals) for a known token, falling back to Avalanche."""
@@ -73,6 +96,56 @@ def _lookup_token(symbol: str, chain_id: int) -> Optional[tuple]:
     if result is None:
         result = _KNOWN_TOKENS.get((symbol.upper(), AVALANCHE_CHAIN_ID))
     return result
+
+
+def _resolve_chain_id(chain: str | int) -> int:
+    if isinstance(chain, int):
+        return chain
+    for entry in _NETWORKS:
+        if entry["name"] == chain:
+            return entry["chain_id"]
+    raise HTTPException(status_code=400, detail=f"Unsupported chain: {chain}")
+
+
+def _get_web3(chain_id: int) -> Web3:
+    rpc_url = _CHAIN_RPC_URLS.get(chain_id)
+    if rpc_url is None:
+        raise HTTPException(status_code=400, detail=f"Unsupported chain id: {chain_id}")
+    w3 = Web3(Web3.HTTPProvider(rpc_url))
+    if chain_id == AVALANCHE_CHAIN_ID:
+        w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+    return w3
+
+
+def _serialize_receipt(receipt: Any) -> Dict[str, Any]:
+    return json.loads(Web3.to_json(receipt))
+
+
+_MESSAGE_TRANSMITTER_ABI: List[Dict[str, Any]] = [
+    {
+        "anonymous": False,
+        "inputs": [
+            {
+                "indexed": False,
+                "internalType": "bytes",
+                "name": "message",
+                "type": "bytes",
+            }
+        ],
+        "name": "MessageSent",
+        "type": "event",
+    },
+    {
+        "inputs": [
+            {"internalType": "bytes", "name": "message", "type": "bytes"},
+            {"internalType": "bytes", "name": "attestation", "type": "bytes"},
+        ],
+        "name": "receiveMessage",
+        "outputs": [{"internalType": "bool", "name": "success", "type": "bool"}],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
+]
 
 
 class TokenPayload(BaseModel):
@@ -155,7 +228,7 @@ class TokenPriceRequest(BaseModel):
 
 
 class AssembleRequest(BaseModel):
-    quote: Dict[str, Any]
+    quote_id: str = Field(..., description="Stored Odos quote id")
     wallet_address: str = Field(..., description="User wallet address")
 
 
@@ -167,6 +240,31 @@ class OutputAmountRequest(BaseModel):
     token_out: TokenPayload      # BTC on destination network
     wallet_address: Optional[str] = Field(default=None, description="User wallet address")
     slippage_perc: float = Field(default=0.1, description="Max slippage percent")
+
+
+class AttestationRequest(BaseModel):
+    source_tx_hash: str = Field(..., description="Source chain transaction hash")
+    source_chain: str = Field(..., description="Source chain name")
+    destination_chain: str = Field(..., description="Destination chain name")
+    poll_attempts: int = Field(default=_ATTESTATION_POLL_ATTEMPTS, ge=1, le=600)
+    poll_interval_s: int = Field(default=_ATTESTATION_POLL_INTERVAL_S, ge=1, le=60)
+
+
+class AttestationResponse(BaseModel):
+    status: str
+    message_hash: str
+    destination_tx_hash: Optional[str] = None
+
+
+class ReceiptRequest(BaseModel):
+    tx_hash: str = Field(..., description="Transaction hash on destination chain")
+    chain: str = Field(..., description="Destination chain name")
+
+
+class ReceiptResponse(BaseModel):
+    status: str
+    tx_hash: str
+    receipt: Optional[Dict[str, Any]] = None
 
 
 def _load_tokens():
@@ -202,6 +300,8 @@ def quote(request: QuoteRequest) -> QuoteResponse:
     token_med_out = TokenPayload(address=dst_usdc[0], decimals=dst_usdc[1], chain_id=dst_chain_id)
     token_out = TokenPayload(address=dst_btc[0], decimals=dst_btc[1], chain_id=dst_chain_id)
 
+    quote_id = str(uuid.uuid4())
+
     quote1 = provider.get_quote(
         amount_in=amount_in,
         token_in=token_in,
@@ -215,6 +315,8 @@ def quote(request: QuoteRequest) -> QuoteResponse:
     if not out_amounts_1:
         raise HTTPException(status_code=502, detail="Provider quote (leg 1) missing outAmounts")
     amount_out_usdc = float(out_amounts_1[0]) / 10**token_med_in.decimals
+
+    quote_store.save_quote(quote_id, quote1)
 
     quote2 = provider.get_quote(
         amount_in=Decimal(str(amount_out_usdc)),
@@ -235,7 +337,7 @@ def quote(request: QuoteRequest) -> QuoteResponse:
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
 
     return QuoteResponse(
-        quoteId=str(uuid.uuid4()),
+        quoteId=quote_id,
         sourceChain=request.sourceChain,
         destinationChain=request.destinationChain,
         sourceAmountSats=request.amountSats,
@@ -385,18 +487,22 @@ def token_price_get(token_address: str, chain_id: int) -> float:
     )
 
 
-@app.post("/assemble", response_model=str)
-def assemble(request: AssembleRequest) -> str:
+@app.post("/assemble", response_model=Dict[str, Any])
+def assemble(request: AssembleRequest) -> Dict[str, Any]:
+    stored_quote = quote_store.get_quote(request.quote_id)
+    if stored_quote is None:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
     tx = provider.assemble(
-        quote=request.quote,
+        quote=stored_quote,
         wallet_address=request.wallet_address,
     )
     if tx is None:
         raise HTTPException(status_code=502, detail="Provider assemble failed")
-    data = tx.get("data")
-    if data is None:
-        raise HTTPException(status_code=502, detail="Provider assemble data missing")
-    return data
+    transaction = tx.get("transaction")
+    if transaction is None:
+        raise HTTPException(status_code=502, detail="Provider assemble transaction missing")
+    return transaction
 
 
 @app.post("/output-amount", response_model=float)
@@ -428,3 +534,117 @@ def output_amount(request: OutputAmountRequest) -> float:
     if not out_amounts_2:
         raise HTTPException(status_code=502, detail="Provider quote 2 missing outAmounts")
     return float(out_amounts_2[0]) / 10**request.token_out.decimals
+
+
+@app.post("/attestation", response_model=AttestationResponse)
+def attestation(request: AttestationRequest) -> AttestationResponse:
+    if not _RELAYER_PRIVATE_KEY:
+        raise HTTPException(status_code=500, detail="Relayer private key not configured")
+
+    source_chain_id = _resolve_chain_id(request.source_chain)
+    destination_chain_id = _resolve_chain_id(request.destination_chain)
+
+    source_w3 = _get_web3(source_chain_id)
+    transmitter_address = _CCTP_MESSAGE_TRANSMITTERS.get(source_chain_id)
+    if not transmitter_address:
+        raise HTTPException(status_code=400, detail="MessageTransmitter not configured for source chain")
+
+    try:
+        receipt = source_w3.eth.get_transaction_receipt(request.source_tx_hash)
+    except TransactionNotFound:
+        raise HTTPException(status_code=404, detail="Source transaction not found")
+
+    transmitter = source_w3.eth.contract(
+        address=Web3.to_checksum_address(transmitter_address),
+        abi=_MESSAGE_TRANSMITTER_ABI,
+    )
+    try:
+        from web3.logs import DISCARD
+
+        message_events = transmitter.events.MessageSent().process_receipt(receipt, errors=DISCARD)
+    except Exception:
+        message_events = transmitter.events.MessageSent().process_receipt(receipt)
+
+    if not message_events:
+        raise HTTPException(status_code=502, detail="MessageSent event not found in receipt")
+
+    message = message_events[0]["args"]["message"]
+    message_hash = Web3.keccak(message).hex()
+    if not message_hash.startswith("0x"):
+        message_hash = f"0x{message_hash}"
+
+    attestation_value = None
+    for _ in range(request.poll_attempts):
+        resp = _requests.get(f"{_IRIS_BASE_URL}/{message_hash}", timeout=30)
+        if resp.status_code == 404:
+            time.sleep(request.poll_interval_s)
+            continue
+        if resp.status_code == 429:
+            time.sleep(request.poll_interval_s)
+            continue
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("status") == "complete":
+            attestation_value = data.get("attestation")
+            break
+        time.sleep(request.poll_interval_s)
+
+    if attestation_value is None:
+        return AttestationResponse(status="pending", message_hash=message_hash)
+
+    dest_transmitter_address = _CCTP_MESSAGE_TRANSMITTERS.get(destination_chain_id)
+    if not dest_transmitter_address:
+        raise HTTPException(status_code=400, detail="MessageTransmitter not configured for destination chain")
+
+    dest_w3 = _get_web3(destination_chain_id)
+    relayer = dest_w3.eth.account.from_key(_RELAYER_PRIVATE_KEY)
+
+    dest_transmitter = dest_w3.eth.contract(
+        address=Web3.to_checksum_address(dest_transmitter_address),
+        abi=_MESSAGE_TRANSMITTER_ABI,
+    )
+    attestation_bytes = Web3.to_bytes(hexstr=attestation_value)
+    receive_fn = dest_transmitter.functions.receiveMessage(message, attestation_bytes)
+
+    gas_estimate = receive_fn.estimate_gas({"from": relayer.address})
+    latest_block = dest_w3.eth.get_block("latest")
+    priority_fee = dest_w3.eth.max_priority_fee
+    base_fee = latest_block.get("baseFeePerGas")
+
+    tx_params: Dict[str, Any] = {
+        "from": relayer.address,
+        "nonce": dest_w3.eth.get_transaction_count(relayer.address),
+        "chainId": destination_chain_id,
+        "gas": int(gas_estimate * 1.2),
+    }
+    if base_fee is not None:
+        tx_params["maxPriorityFeePerGas"] = priority_fee
+        tx_params["maxFeePerGas"] = base_fee * 2 + priority_fee
+    else:
+        tx_params["gasPrice"] = dest_w3.eth.gas_price
+
+    receive_tx = receive_fn.build_transaction(tx_params)
+    signed_tx = relayer.sign_transaction(receive_tx)
+    destination_tx_hash = dest_w3.eth.send_raw_transaction(signed_tx.raw_transaction).hex()
+
+    return AttestationResponse(
+        status="complete",
+        message_hash=message_hash,
+        destination_tx_hash=destination_tx_hash,
+    )
+
+
+@app.post("/receipt", response_model=ReceiptResponse)
+def receipt(request: ReceiptRequest) -> ReceiptResponse:
+    chain_id = _resolve_chain_id(request.chain)
+    w3 = _get_web3(chain_id)
+    try:
+        tx_receipt = w3.eth.get_transaction_receipt(request.tx_hash)
+    except TransactionNotFound:
+        return ReceiptResponse(status="pending", tx_hash=request.tx_hash)
+    status = "confirmed" if tx_receipt.get("status") == 1 else "failed"
+    return ReceiptResponse(
+        status=status,
+        tx_hash=request.tx_hash,
+        receipt=_serialize_receipt(tx_receipt),
+    )

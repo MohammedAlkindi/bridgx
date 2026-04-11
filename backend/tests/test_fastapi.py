@@ -102,25 +102,48 @@ def test_quote_leg2_missing_outamounts() -> None:
 
 def test_assemble_ok() -> None:
     payload = {
-        "quote": {"pathId": "abc"},
+        "quote_id": "quote-123",
         "wallet_address": "0x0000000000000000000000000000000000000000",
     }
-    with patch("backend.api.provider.assemble") as mock_assemble:
-        mock_assemble.return_value = {"data": "0xdeadbeef"}
+    with patch("backend.api.quote_store.get_quote") as mock_get_quote, patch(
+        "backend.api.provider.assemble"
+    ) as mock_assemble:
+        mock_get_quote.return_value = {"pathId": "abc"}
+        mock_assemble.return_value = {
+            "transaction": {
+                "to": "0x1111111111111111111111111111111111111111",
+                "data": "0xdeadbeef",
+                "value": 0,
+            }
+        }
         response = client.post("/assemble", json=payload)
     assert response.status_code == 200
-    assert response.json() == "0xdeadbeef"
+    assert response.json()["data"] == "0xdeadbeef"
 
 
 def test_assemble_missing_data() -> None:
     payload = {
-        "quote": {"pathId": "abc"},
+        "quote_id": "quote-123",
         "wallet_address": "0x0000000000000000000000000000000000000000",
     }
-    with patch("backend.api.provider.assemble") as mock_assemble:
+    with patch("backend.api.quote_store.get_quote") as mock_get_quote, patch(
+        "backend.api.provider.assemble"
+    ) as mock_assemble:
+        mock_get_quote.return_value = {"pathId": "abc"}
         mock_assemble.return_value = {}
         response = client.post("/assemble", json=payload)
     assert response.status_code == 502
+
+
+def test_assemble_quote_not_found() -> None:
+    payload = {
+        "quote_id": "quote-123",
+        "wallet_address": "0x0000000000000000000000000000000000000000",
+    }
+    with patch("backend.api.quote_store.get_quote") as mock_get_quote:
+        mock_get_quote.return_value = None
+        response = client.post("/assemble", json=payload)
+    assert response.status_code == 404
 
 
 def test_output_amount_ok() -> None:
@@ -183,7 +206,7 @@ def test_quote_validation_missing_wallet_address() -> None:
 
 
 def test_assemble_validation_missing_wallet_address() -> None:
-    payload = {"quote": {"pathId": "abc"}}
+    payload = {"quote_id": "quote-123"}
     response = client.post("/assemble", json=payload)
     assert response.status_code == 422
 
