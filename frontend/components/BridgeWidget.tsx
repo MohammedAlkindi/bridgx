@@ -1,4 +1,4 @@
-import type { SupportedChain } from "../types";
+import type { SupportedChain, TokenInfo } from "../types";
 
 type QuoteView = {
   sourceAmountSats: string;
@@ -10,9 +10,13 @@ type QuoteView = {
 type BridgeWidgetProps = {
   sourceChain: SupportedChain;
   destinationChain: SupportedChain;
+  sourceToken: string;
+  destinationToken: string;
   amountSats: string;
   recipientAddress: string;
   chainOptions: readonly SupportedChain[];
+  sourceTokenOptions: readonly TokenInfo[];
+  destinationTokenOptions: readonly TokenInfo[];
   quote?: QuoteView;
   ctaLabel?: string;
   loading?: boolean;
@@ -26,6 +30,8 @@ type BridgeWidgetProps = {
   usdRate?: number;
   onSourceChainChange: (chain: SupportedChain) => void;
   onDestinationChainChange: (chain: SupportedChain) => void;
+  onSourceTokenChange: (token: string) => void;
+  onDestinationTokenChange: (token: string) => void;
   onAmountSatsChange: (amount: string) => void;
   onRecipientAddressChange: (address: string) => void;
   onSwapChains: () => void;
@@ -61,12 +67,20 @@ function satsToUsd(sats: number, usdPerBtc: number): string {
   });
 }
 
+function formatTokenLabel(token: TokenInfo): string {
+  return token.symbol ?? token.name ?? token.address;
+}
+
 export default function BridgeWidget({
   sourceChain,
   destinationChain,
+  sourceToken,
+  destinationToken,
   amountSats,
   recipientAddress,
   chainOptions,
+  sourceTokenOptions,
+  destinationTokenOptions,
   quote,
   ctaLabel = "Bridge BTC",
   loading = false,
@@ -78,12 +92,19 @@ export default function BridgeWidget({
   usdRate,
   onSourceChainChange,
   onDestinationChainChange,
+  onSourceTokenChange,
+  onDestinationTokenChange,
   onAmountSatsChange,
   onRecipientAddressChange,
   onSwapChains,
   onSubmit,
 }: BridgeWidgetProps) {
   const isSubmitDisabled = loading || !canSubmit;
+  const tokenBadgeLabel = sourceToken
+    ? destinationToken && destinationToken !== sourceToken
+      ? `${sourceToken} → ${destinationToken}`
+      : sourceToken
+    : "Select token";
 
   const amountNum = Number(amountSats);
   const amountUsd = usdRate && amountSats && Number.isFinite(amountNum) && amountNum > 0
@@ -184,16 +205,65 @@ export default function BridgeWidget({
           </div>
         </div>
 
-        {/* Asset indicator */}
-        <div className="mt-3 flex justify-center">
-          <span
-            className="inline-flex items-center gap-1.5 rounded-md border border-[#1e2d5a] bg-[#090e1f] px-2.5 py-1 text-[11px] font-medium text-[#4a5a8a]"
+      {/* Asset indicator */}
+      <div className="mt-3 flex justify-center">
+        <span
+          className="inline-flex items-center gap-2 rounded-md border border-[#1e2d5a] bg-[#090e1f] px-2.5 py-1 text-[11px] font-medium text-[#4a5a8a]"
+        >
+          <span className="text-[10px] font-bold text-[#F7931A]">Token</span>
+          {tokenBadgeLabel}
+        </span>
+      </div>
+
+      {/* Token selectors */}
+      <div className="mt-4 grid grid-cols-[1fr_40px_1fr] items-end gap-2">
+        <div>
+          <label htmlFor="source-token" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[#5a6d9a]">
+            Token
+          </label>
+          <select
+            id="source-token"
+            value={sourceToken}
+            onChange={(e) => onSourceTokenChange(e.target.value)}
+            disabled={sourceTokenOptions.length === 0}
+            className="w-full rounded-lg border border-[#1e2d5a] bg-[#090e1f] px-3 py-2.5 text-sm text-[#e2e8ff] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20 disabled:opacity-60"
           >
-            <span style={{ color: "#F7931A", fontWeight: 700, fontSize: 10 }}>₿</span>
-            BTC (wrapped)
-          </span>
+            {sourceTokenOptions.length === 0 ? (
+              <option value="">No tokens</option>
+            ) : (
+              sourceTokenOptions.map((token) => (
+                <option key={`${token.chain_id}-${token.address}`} value={formatTokenLabel(token)}>
+                  {formatTokenLabel(token)}
+                </option>
+              ))
+            )}
+          </select>
+        </div>
+        <div />
+        <div>
+          <label htmlFor="destination-token" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[#5a6d9a]">
+            Token
+          </label>
+          <select
+            id="destination-token"
+            value={destinationToken}
+            onChange={(e) => onDestinationTokenChange(e.target.value)}
+            disabled={destinationTokenOptions.length === 0}
+            className="w-full rounded-lg border border-[#1e2d5a] bg-[#090e1f] px-3 py-2.5 text-sm text-[#e2e8ff] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20 disabled:opacity-60"
+          >
+            {destinationTokenOptions.length === 0 ? (
+              <option value="">No tokens</option>
+            ) : (
+              destinationTokenOptions.map((token) => (
+                <option key={`${token.chain_id}-${token.address}`} value={formatTokenLabel(token)}>
+                  {formatTokenLabel(token)}
+                </option>
+              ))
+            )}
+          </select>
         </div>
       </div>
+    </div>
 
       {/* Divider */}
       <div className="border-t border-[#121d3a]" />
