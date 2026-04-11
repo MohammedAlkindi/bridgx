@@ -149,15 +149,20 @@ export default function HomePage() {
       <div style={{ maxWidth: 560, margin: "0 auto" }}>
         <div
           style={{
-            marginBottom: 28,
+            marginBottom: 24,
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "center",
+            alignItems: "flex-start",
           }}
         >
-          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: "#f0f4ff", letterSpacing: "-0.5px" }}>
-            Bridge BTC
-          </h1>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: "#f0f4ff", letterSpacing: "-0.5px", lineHeight: 1.2 }}>
+              Bridge BTC
+            </h1>
+            <p style={{ margin: "5px 0 0", fontSize: 13, color: "#6b7db3", fontWeight: 400 }}>
+              Cross-chain in ~2 min, verified on-chain
+            </p>
+          </div>
           <WalletButton
             status={wallet.status}
             address={wallet.address}
@@ -196,20 +201,68 @@ export default function HomePage() {
 
         <div
           style={{
-            marginTop: 28,
+            marginTop: 20,
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
-            gap: 8,
-            fontSize: 12,
-            color: "#4a5a8a",
+            gap: 6,
+            flexWrap: "wrap",
           }}
         >
-          <span>0% bridge fee</span>
-          <span style={{ color: "#263360" }}>·</span>
-          <span>~2 min settlement</span>
-          <span style={{ color: "#263360" }}>·</span>
-          <span>On-chain proof</span>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              padding: "4px 10px",
+              borderRadius: 6,
+              border: "1px solid #1e2d5a",
+              background: "#0d1326",
+              fontSize: 11,
+              fontWeight: 500,
+              color: "#7a90b8",
+              letterSpacing: "0.02em",
+            }}
+          >
+            <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#334060", display: "inline-block", flexShrink: 0 }} />
+            0% bridge fee
+          </span>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              padding: "4px 10px",
+              borderRadius: 6,
+              border: "1px solid #1e2d5a",
+              background: "#0d1326",
+              fontSize: 11,
+              fontWeight: 500,
+              color: "#7a90b8",
+              letterSpacing: "0.02em",
+            }}
+          >
+            <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#334060", display: "inline-block", flexShrink: 0 }} />
+            ~2 min settlement
+          </span>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              padding: "4px 10px",
+              borderRadius: 6,
+              border: "1px solid #1e2d5a",
+              background: "#0d1326",
+              fontSize: 11,
+              fontWeight: 500,
+              color: "#7a90b8",
+              letterSpacing: "0.02em",
+            }}
+          >
+            <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#334060", display: "inline-block", flexShrink: 0 }} />
+            On-chain proof
+          </span>
         </div>
       </div>
     </section>
