@@ -135,3 +135,16 @@ export async function getBridgeReceipt(
 
   return requestJson<TransferReceiptResponse>(`/bridge/${transferId}/receipt`);
 }
+
+export async function getBtcUsdRate(): Promise<number> {
+  if (MOCK_API_ENABLED) {
+    try {
+      const data = await requestJson<{ usd: number }>("/btc-price");
+      return data.usd;
+    } catch {
+      return 85000;
+    }
+  }
+  const data = await requestJson<{ usd: number }>("/btc-price");
+  return data.usd;
+}
