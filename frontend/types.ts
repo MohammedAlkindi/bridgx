@@ -60,7 +60,7 @@ export interface AttestationRequest {
 
 export interface AttestationResponse {
   status: "pending" | "complete";
-  messageHash: TxHash;
+  messageHash?: TxHash;
   destinationTxHash?: TxHash;
 }
 

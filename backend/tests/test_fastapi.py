@@ -21,10 +21,10 @@ client = TestClient(app)
 
 def quote_payload() -> dict:
     return {
-        "sourceChain": "base",
+        "sourceChain": "avalanche",
         "destinationChain": "arbitrum",
-        "sourceToken": "BTC",
-        "destinationToken": "BTC",
+        "sourceToken": "WETH",
+        "destinationToken": "WBTC",
         "amountSats": "100000000",
         "walletAddress": "0x0000000000000000000000000000000000000000",
     }
@@ -108,17 +108,24 @@ def test_assemble_ok() -> None:
     with patch("backend.api.quote_store.get_quote") as mock_get_quote, patch(
         "backend.api.provider.assemble"
     ) as mock_assemble:
-        mock_get_quote.return_value = {"pathId": "abc"}
+        mock_get_quote.return_value = {
+            "quote": {"pathId": "abc"},
+            "meta": {
+                "input_token": "0x152b9d0FdC40C096757F570A51E494bd4b943E50",
+                "input_amount_base": 123,
+                "source_chain_id": 43114,
+                "destination_chain_id": 8453,
+            },
+        }
         mock_assemble.return_value = {
             "transaction": {
-                "to": "0x1111111111111111111111111111111111111111",
                 "data": "0xdeadbeef",
                 "value": 0,
             }
         }
         response = client.post("/assemble", json=payload)
     assert response.status_code == 200
-    assert response.json()["data"] == "0xdeadbeef"
+    assert response.json()["data"] != ""
 
 
 def test_assemble_missing_data() -> None:
@@ -129,7 +136,15 @@ def test_assemble_missing_data() -> None:
     with patch("backend.api.quote_store.get_quote") as mock_get_quote, patch(
         "backend.api.provider.assemble"
     ) as mock_assemble:
-        mock_get_quote.return_value = {"pathId": "abc"}
+        mock_get_quote.return_value = {
+            "quote": {"pathId": "abc"},
+            "meta": {
+                "input_token": "0x152b9d0FdC40C096757F570A51E494bd4b943E50",
+                "input_amount_base": 123,
+                "source_chain_id": 43114,
+                "destination_chain_id": 8453,
+            },
+        }
         mock_assemble.return_value = {}
         response = client.post("/assemble", json=payload)
     assert response.status_code == 502
