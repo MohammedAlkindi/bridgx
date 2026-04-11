@@ -1,74 +1,151 @@
-# API Contract (Current + Target)
+# API Contract (as implemented)
 
-Base URL (local): `http://localhost:4000`
+Base URL (local default used in docs): `http://localhost:4000`
 
-## Implemented Endpoints
+> Note: frontend defaults to `http://localhost:8000` unless `NEXT_PUBLIC_API_BASE_URL` is set.
 
-### `POST /quote`
+## Endpoints
 
-Returns high-level bridge quote metadata.
+## `POST /quote`
+
+Builds a two-leg quote:
+1) source BTC-like token -> source USDC
+2) destination USDC -> destination BTC-like token
+
+Input:
+```json
+{
+  "sourceChain": "avalanche",
+  "destinationChain": "arbitrum",
+  "sourceToken": "BTCB",
+  "destinationToken": "WBTC",
+  "amountSats": "100000",
+  "walletAddress": "0x0000000000000000000000000000000000000000"
+}
+```
+
+Output shape:
+```json
+{
+  "quoteId": "uuid",
+  "sourceChain": "avalanche",
+  "destinationChain": "arbitrum",
+  "sourceAmountSats": "100000",
+  "destinationAmountSats": "...",
+  "estimatedDurationSec": 90,
+  "routeExpiresAt": "ISO-8601"
+}
+```
+
+Notes:
+- Stores leg-1 Odos quote + metadata in SQLite (`quote_store`) keyed by `quoteId`.
+- Requires source chain to have configured `SourceExecutor`; defaults include Avalanche only.
+
+## `POST /provider/quote`
+
+Single-hop Odos quote helper.
+
+Input fields:
+- `amount_in` (decimal)
+- `token_in` / `token_out` with `address|symbol`, `chain_id`, `decimals`
+- `wallet_address` (optional)
+- `slippage_perc` (optional)
+
+Returns: output token amount as `float`.
+
+## `POST /assemble`
+
+Converts stored `quoteId` into executable tx calldata for `SourceExecutor.executeSwapAndBurn`.
 
 Request:
 ```json
 {
-  "sourceChain": "base",
-  "destinationChain": "arbitrum",
-  "sourceToken": "BTC",
-  "destinationToken": "BTC",
-  "amountSats": "100000",
-  "walletAddress": "0x..."
+  "quote_id": "uuid",
+  "wallet_address": "0x..."
 }
 ```
 
-Response:
+Returns transaction object:
+- `to`
+- `data`
+- `value`
+- `chainId`
+
+## `POST /output-amount`
+
+Generic two-hop output estimator for explicit token path.
+Returns destination amount as `float`.
+
+## `POST /provider/token-price`
+## `POST /token-price`
+## `GET /token-price`
+
+Token USD price via Odos pricing endpoint, with 60-second in-memory cache in backend.
+
+## `GET /tokens`
+
+Returns token registry entries currently hardcoded in `backend/libs/token.py`.
+
+## `GET /networks`
+
+Returns:
+- avalanche (43114)
+- base (8453)
+- arbitrum (42161)
+
+## `GET /token-balance`
+
+Query params:
+- `token_address`
+- `wallet_address`
+- `chain_id`
+
+Uses direct `eth_call(balanceOf)` against chain RPC URL map in backend.
+
+## `POST /attestation`
+
+Flow:
+1. Reads source tx receipt.
+2. Extracts `MessageSent` from source chain `MessageTransmitter`.
+3. Polls Circle Iris attestation API.
+4. If attestation is ready, submits `receiveMessage` tx on destination chain using relayer key.
+
+Request fields (snake_case):
+- `source_tx_hash`
+- `source_chain`
+- `destination_chain`
+- `poll_attempts` (optional)
+- `poll_interval_s` (optional)
+
+## `POST /receipt`
+
+Request:
 ```json
 {
-  "quoteId": "uuid",
-  "sourceChain": "base",
-  "destinationChain": "arbitrum",
-  "sourceAmountSats": "100000",
-  "destinationAmountSats": "99500",
-  "estimatedDurationSec": 90,
-  "routeExpiresAt": "2026-04-11T00:00:00+00:00"
+  "tx_hash": "0x...",
+  "chain": "base"
 }
 ```
 
-### `POST /provider/quote`
+Response status:
+- `pending`
+- `confirmed`
+- `failed`
 
-Low-level single-hop quote helper for a token pair.
+## Not implemented but referenced by frontend types/pages
 
-### `POST /assemble`
-
-Assembles provider transaction payload from a quote object and wallet address.
-
-### `POST /output-amount`
-
-Computes output amount for explicit two-hop path:
-- token_in -> token_med_in
-- token_med_out -> token_out
-
-### `GET /btc-price`
-
-Returns BTC/USD price with short cache.
-
-## Target Endpoints (Planned)
-
-Frontend types expect additional orchestration APIs:
-
+These routes are called by `frontend/lib/api.ts` and `/bridge/[id]`, but backend does not define them:
 - `POST /bridge/initiate`
 - `GET /bridge/{transferId}/status`
 - `GET /bridge/{transferId}/receipt`
 
-These should become first-class endpoints in backend productionization.
+In non-production frontend mode, these calls fall back to mock data.
 
-## Error Semantics
+## Error patterns
 
-- `400`: invalid chain/name combinations.
-- `422`: request schema validation failure.
-- `502`: upstream provider failure or incomplete provider payload.
-
-## Notes for Integrators
-
-- `amountSats` is a **string** for precision safety.
-- `walletAddress` should be a checksummed EVM address.
-- Quote expiry should be enforced client-side and server-side for execution safety.
+Common status codes used in handlers:
+- `400` invalid chain/configuration/address
+- `404` missing stored quote (`/assemble`)
+- `422` schema validation error
+- `502` upstream/provider/RPC failures
+- `500` unexpected errors (notably in `/attestation`)

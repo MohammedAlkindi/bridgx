@@ -1,81 +1,47 @@
-# BridgX — Cross-Chain Wrapped BTC Bridge
+# BridgX
 
-BridgX is a hackathon-focused prototype for bridging BTC-denominated value across EVM L2s with a UX optimized for speed and clarity.
+BridgX is a prototype cross-chain BTC-asset bridge composed of a Next.js frontend, a FastAPI backend, and a Solidity source-chain executor contract. Today, the implemented execution path is Avalanche source only, with destination settlement handled through Circle CCTP message attestation and relay logic in the backend.
 
-The project currently includes:
-- **A Next.js frontend** for wallet connection, quote preview, and transfer tracking flow.
-- **A FastAPI backend** for quote computation and provider integrations.
-- **A Solidity source-side executor** that can swap to USDC and trigger CCTP-style burns.
+## Current status
 
----
+This repository is a prototype, not a production bridge.
 
-## Why BridgX
+What is implemented in code:
+- Frontend UI for wallet connect, chain/token selection, quoting, and transaction submission.
+- Backend quote + transaction assembly + attestation + receipt APIs.
+- Backend integration with Odos quote/assemble APIs and token pricing API.
+- Solidity `SourceExecutor` contract for swap + `depositForBurnWithHook` flow.
+- Backend unit tests for quote/assemble/token/network/balance/token-price endpoints.
 
-Moving BTC liquidity across ecosystems is still fragmented and frequently forces users to:
-- switch between multiple UIs,
-- manually compare paths,
-- trust opaque intermediary steps.
+What is partial or not wired end-to-end:
+- Transfer tracking endpoints used by `/bridge/[id]` (`/bridge/initiate`, `/bridge/{id}/status`, `/bridge/{id}/receipt`) are not implemented in backend.
+- Frontend transfer details page therefore depends on mock fallback behavior in non-production mode.
+- Source executor address mapping is configured only for Avalanche in backend defaults.
 
-BridgX aims to provide a single operator-style flow:
-1. Choose source and destination chains.
-2. Enter amount in satoshis.
-3. Connect wallet and receive route output estimate.
-4. Execute transfer and monitor status.
-
----
-
-## Current Project Status (April 11, 2026)
-
-This repository is a **working prototype/MVP**, not a fully productionized bridge.
-
-What works today:
-- Frontend quote UX with chain/token controls and MetaMask connect.
-- Backend quote endpoints that call Odos and compute two-hop BTC→USDC→BTC output.
-- BTC/USD price endpoint with short in-memory cache.
-- Smart contract for source-side swap + burn orchestration.
-
-What is still in-progress:
-- End-to-end transfer orchestration endpoints (frontend currently includes mock fallback behavior for missing bridge status/initiation routes).
-- Full relayer/attestation lifecycle automation.
-- Production-grade observability, risk controls, and ops automation.
-
----
-
-## Repository Structure
+## Repository layout
 
 ```text
 BridgX/
-├── frontend/                  # Next.js app (App Router)
-│   ├── app/                   # Pages/routes
-│   ├── components/            # UI components
-│   ├── lib/                   # API + wallet helpers
-│   └── types.ts               # Shared frontend domain types
-├── backend/                   # FastAPI service
-│   ├── api.py                 # API routes and models
-│   ├── libs/provider.py       # Odos quote/assemble integration
-│   ├── libs/token.py          # Token helpers (Web3)
-│   └── tests/                 # Backend tests
-├── solidity/                  # Smart contracts and notebooks
+├── frontend/                  # Next.js App Router client
+│   ├── app/                   # Routes/pages
+│   ├── components/            # Reusable UI components
+│   ├── lib/                   # API client + wallet helpers
+│   └── types.ts               # Shared frontend types
+├── backend/                   # FastAPI API service
+│   ├── api.py                 # Route handlers + chain/CCTP logic
+│   ├── libs/provider.py       # Odos API client helpers
+│   ├── libs/token.py          # Token registry helpers
+│   ├── libs/quote_store.py    # SQLite quote storage with TTL
+│   └── tests/test_fastapi.py  # API tests
+├── solidity/
 │   ├── SourceExecutor.sol
-│   └── deploy_*.ipynb
-└── docs/                      # Deep-dive project docs
+│   └── *.ipynb                # deployment/e2e notebooks
+└── docs/
 ```
 
----
+## Local development
 
-## Quick Start
-
-### 1) Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Default frontend URL: `http://localhost:3000`
-
-### 2) Backend
+### 1) Backend
 
 ```bash
 cd backend
@@ -85,64 +51,81 @@ pip install -r requirements.txt
 uvicorn api:app --reload --host 0.0.0.0 --port 4000
 ```
 
-Default backend URL: `http://localhost:4000`
+### 2) Frontend
 
-### 3) Point frontend to backend
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-Create `frontend/.env.local`:
+By default, frontend API base is `http://localhost:8000`, so set `frontend/.env.local` if backend runs on `:4000`:
 
 ```env
 NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
 NEXT_PUBLIC_USE_MOCK_API=false
 ```
 
----
+## Environment variables actually read by code
 
-## Core User Flow
+### Frontend
+- `NEXT_PUBLIC_API_BASE_URL`
+- `NEXT_PUBLIC_USE_MOCK_API`
 
-1. User connects MetaMask in UI.
-2. User selects `sourceChain`, `destinationChain`, and `amountSats`.
-3. Frontend requests `POST /quote`.
-4. Backend resolves chain token mappings and computes output via two Odos quotes.
-5. UI shows estimated destination sats and ETA.
-6. User initiates bridge flow (today this route may fall back to mocked responses if not available).
+### Backend
+- `SOURCE_EXECUTOR_AVALANCHE`
+- `AVALANCHE_MESSAGE_TRANSMITTER`
+- `BASE_MESSAGE_TRANSMITTER`
+- `ARBITRUM_MESSAGE_TRANSMITTER`
+- `CCTP_MAX_FEE`
+- `CCTP_MIN_FINALITY_THRESHOLD`
+- `CCTP_HOOK_DATA`
+- `CCTP_DESTINATION_CALLER`
+- `RELAYER_PRIVATE_KEY` (or fallback `DEPLOYER_PRIVATE_KEY`)
+- `ATTESTATION_POLL_ATTEMPTS`
+- `ATTESTATION_POLL_INTERVAL_S`
+- `QUOTE_TTL_S`
+- `QUOTE_DB_PATH`
 
----
+Backend loads `.env` from `backend/.env` first, then repo-level `.env`.
 
-## Security & Reliability Principles
+## Implemented backend API surface
 
-- Non-custodial orientation (wallet-driven transaction approval).
-- Short-lived quotes to reduce stale pricing risk.
-- Defensive API validation via Pydantic models.
-- Solidity contract includes owner-guarded rescue methods and safe ERC20 call wrappers.
+Implemented endpoints:
+- `POST /quote`
+- `POST /provider/quote`
+- `POST /assemble`
+- `POST /output-amount`
+- `POST /provider/token-price`
+- `POST /token-price`
+- `GET /token-price`
+- `GET /tokens`
+- `GET /networks`
+- `GET /token-balance`
+- `POST /attestation`
+- `POST /receipt`
 
-> **Important:** This project should be audited and hardened before mainnet production use.
+There is no implemented `/btc-price` endpoint in the backend.
 
----
+## Frontend behavior that matters for contributors
 
-## Documentation Index
+- Main page executes bridge flow directly via `/quote` -> `/assemble` -> `/attestation` -> `/receipt`.
+- Source chain selector disables Base and Arbitrum as source; UI effectively drives Avalanche as source for submit flow.
+- `MOCK_API_ENABLED` is `true` for non-production builds, so failed API calls often return mock data to keep UI usable during local demos.
+
+## Limitations
+
+- No persistence for transfer lifecycle beyond quote storage; no durable transfer records or status stream.
+- No auth/rate limiting.
+- No production deployment config, CI pipeline, or contract test suite in this repo.
+- Smart contract and relayer flow have not been presented as audited here.
+
+## Docs index
 
 - [Architecture](docs/ARCHITECTURE.md)
-- [Frontend Guide](docs/FRONTEND.md)
-- [API Contract](docs/API_CONTRACT.md)
-- [Smart Contracts](docs/SMART_CONTRACTS.md)
+- [Frontend behavior](docs/FRONTEND.md)
+- [Backend API contract](docs/API_CONTRACT.md)
+- [Smart contracts](docs/SMART_CONTRACTS.md)
 - [Roadmap](docs/ROADMAP.md)
-- [Demo Script](docs/DEMO.md)
+- [Demo script](docs/DEMO.md)
 - [Contributing](docs/CONTRIBUTING.md)
-
----
-
-## Competitive Edge Narrative (Hackathon Positioning)
-
-BridgX differentiates by combining:
-- **BTC-native mental model** (`amountSats` first, not token-unit confusion),
-- **Simple bridge UX** (single-screen quote + intent),
-- **Composable backend architecture** (provider abstraction + quote orchestration),
-- **On-chain enforceable execution primitive** (SourceExecutor),
-- **Roadmap-ready architecture** for relayers, intents, and zero-friction chain expansion.
-
----
-
-## Disclaimer
-
-This repository is provided for educational, prototyping, and hackathon demonstration purposes. It is **not financial advice** and should not be used with significant funds without independent security review and operational hardening.
