@@ -17,9 +17,8 @@ import type {
 } from "../types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-const MOCK_API_ENABLED =
-  process.env.NEXT_PUBLIC_USE_MOCK_API === "true" ||
-  process.env.NODE_ENV !== "production";
+const FORCE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
+const MOCK_API_ENABLED = FORCE_MOCK_API || process.env.NODE_ENV !== "production";
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
@@ -122,18 +121,8 @@ export async function getQuote(request: QuoteRequest): Promise<QuoteResponse> {
 }
 
 export async function assembleTx(request: AssembleRequest): Promise<AssembledTransaction> {
-  if (MOCK_API_ENABLED) {
-    try {
-      return await requestJson<AssembledTransaction>("/assemble", {
-        method: "POST",
-        body: JSON.stringify({
-          quote_id: request.quoteId,
-          wallet_address: request.walletAddress,
-        }),
-      });
-    } catch {
-      return buildMockAssemble(request);
-    }
+  if (FORCE_MOCK_API) {
+    return buildMockAssemble(request);
   }
 
   return requestJson<AssembledTransaction>("/assemble", {
