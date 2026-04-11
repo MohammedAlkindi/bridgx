@@ -1,4 +1,4 @@
-import type { SupportedChain } from "../types";
+import type { SupportedChain, TokenInfo } from "../types";
 
 type QuoteView = {
   sourceAmountSats: string;
@@ -10,9 +10,13 @@ type QuoteView = {
 type BridgeWidgetProps = {
   sourceChain: SupportedChain;
   destinationChain: SupportedChain;
+  sourceToken: string;
+  destinationToken: string;
   amountSats: string;
   recipientAddress: string;
   chainOptions: readonly SupportedChain[];
+  sourceTokenOptions: readonly TokenInfo[];
+  destinationTokenOptions: readonly TokenInfo[];
   quote?: QuoteView;
   ctaLabel?: string;
   loading?: boolean;
@@ -23,6 +27,8 @@ type BridgeWidgetProps = {
   usdRate?: number;
   onSourceChainChange: (chain: SupportedChain) => void;
   onDestinationChainChange: (chain: SupportedChain) => void;
+  onSourceTokenChange: (token: string) => void;
+  onDestinationTokenChange: (token: string) => void;
   onAmountSatsChange: (amount: string) => void;
   onRecipientAddressChange: (address: string) => void;
   onSwapChains: () => void;
@@ -51,12 +57,20 @@ function satsToUsd(sats: number, usdPerBtc: number): string {
   });
 }
 
+function formatTokenLabel(token: TokenInfo): string {
+  return token.symbol ?? token.name ?? token.address;
+}
+
 export default function BridgeWidget({
   sourceChain,
   destinationChain,
+  sourceToken,
+  destinationToken,
   amountSats,
   recipientAddress,
   chainOptions,
+  sourceTokenOptions,
+  destinationTokenOptions,
   quote,
   ctaLabel = "Bridge BTC",
   loading = false,
@@ -67,6 +81,8 @@ export default function BridgeWidget({
   usdRate,
   onSourceChainChange,
   onDestinationChainChange,
+  onSourceTokenChange,
+  onDestinationTokenChange,
   onAmountSatsChange,
   onRecipientAddressChange,
   onSwapChains,
@@ -136,6 +152,55 @@ export default function BridgeWidget({
           {fieldErrors?.destinationChain && (
             <p className="mt-1 text-xs text-red-400">{fieldErrors.destinationChain}</p>
           )}
+        </div>
+      </div>
+
+      {/* Token selectors */}
+      <div className="mt-3 grid grid-cols-[1fr_36px_1fr] items-end gap-2">
+        <div>
+          <label htmlFor="source-token" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#6b7db3]">
+            Token
+          </label>
+          <select
+            id="source-token"
+            value={sourceToken}
+            onChange={(e) => onSourceTokenChange(e.target.value)}
+            disabled={sourceTokenOptions.length === 0}
+            className="w-full rounded-lg border border-[#263360] bg-[#0f1632] px-3 py-2.5 text-sm text-[#e2e8ff] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20 disabled:opacity-60"
+          >
+            {sourceTokenOptions.length === 0 ? (
+              <option value="">No tokens</option>
+            ) : (
+              sourceTokenOptions.map((token) => (
+                <option key={`${token.chain_id}-${token.address}`} value={formatTokenLabel(token)}>
+                  {formatTokenLabel(token)}
+                </option>
+              ))
+            )}
+          </select>
+        </div>
+        <div />
+        <div>
+          <label htmlFor="destination-token" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#6b7db3]">
+            Token
+          </label>
+          <select
+            id="destination-token"
+            value={destinationToken}
+            onChange={(e) => onDestinationTokenChange(e.target.value)}
+            disabled={destinationTokenOptions.length === 0}
+            className="w-full rounded-lg border border-[#263360] bg-[#0f1632] px-3 py-2.5 text-sm text-[#e2e8ff] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20 disabled:opacity-60"
+          >
+            {destinationTokenOptions.length === 0 ? (
+              <option value="">No tokens</option>
+            ) : (
+              destinationTokenOptions.map((token) => (
+                <option key={`${token.chain_id}-${token.address}`} value={formatTokenLabel(token)}>
+                  {formatTokenLabel(token)}
+                </option>
+              ))
+            )}
+          </select>
         </div>
       </div>
 

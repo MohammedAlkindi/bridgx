@@ -4,9 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import BridgeWidget from "../components/BridgeWidget";
 import WalletButton from "../components/WalletButton";
-import { getBtcUsdRate, getQuote, initiateBridge } from "../lib/api";
+import { getBtcUsdRate, getQuote, getTokens, initiateBridge } from "../lib/api";
 import { generateMockEvmAddress, isValidEvmAddress, type WalletState } from "../lib/wallet";
-import { SUPPORTED_CHAINS, type QuoteResponse, type SupportedChain } from "../types";
+import { SUPPORTED_CHAINS, type QuoteResponse, type SupportedChain, type TokenInfo } from "../types";
 
 const QUOTE_DEBOUNCE_MS = 600;
 const MOCK_WALLET_BALANCE_SATS = 500_000; // 0.005 BTC — shown when wallet is connected
@@ -14,6 +14,24 @@ const MOCK_WALLET_BALANCE_SATS = 500_000; // 0.005 BTC — shown when wallet is 
 type FieldErrors = Partial<
   Record<"sourceChain" | "destinationChain" | "amountSats" | "recipientAddress", string>
 >;
+
+const CHAIN_ID_TO_NAME: Record<number, SupportedChain> = {
+  8453: "base",
+  42161: "arbitrum",
+  10: "optimism",
+};
+
+function resolveTokenChain(token: TokenInfo): SupportedChain | null {
+  const chainName = token.chain_name?.toLowerCase();
+  if (chainName === "base" || chainName === "arbitrum" || chainName === "optimism") {
+    return chainName;
+  }
+  return CHAIN_ID_TO_NAME[token.chain_id] ?? null;
+}
+
+function tokenLabel(token: TokenInfo): string {
+  return token.symbol ?? token.name ?? token.address;
+}
 
 function getFieldErrors(
   sourceChain: SupportedChain,
@@ -41,9 +59,12 @@ function isFormComplete(
   destinationChain: SupportedChain,
   amountSats: string,
   recipientAddress: string,
+  sourceToken: string,
+  destinationToken: string,
 ): boolean {
   if (!walletAddress) return false;
   if (sourceChain === destinationChain) return false;
+  if (!sourceToken || !destinationToken) return false;
   const sats = Number(amountSats);
   if (!amountSats || !Number.isFinite(sats) || sats <= 0) return false;
   if (!isValidEvmAddress(recipientAddress)) return false;
@@ -56,6 +77,9 @@ export default function HomePage() {
   const [wallet, setWallet] = useState<WalletState>({ status: "disconnected" });
   const [sourceChain, setSourceChain] = useState<SupportedChain>("base");
   const [destinationChain, setDestinationChain] = useState<SupportedChain>("arbitrum");
+  const [tokens, setTokens] = useState<TokenInfo[]>([]);
+  const [sourceToken, setSourceToken] = useState("");
+  const [destinationToken, setDestinationToken] = useState("");
   const [amountSats, setAmountSats] = useState("100000");
   const [recipientAddress, setRecipientAddress] = useState("");
 
@@ -73,6 +97,37 @@ export default function HomePage() {
       .catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    getTokens()
+      .then((data) => setTokens(data))
+      .catch(() => setTokens([]));
+  }, []);
+
+  const sourceTokenOptions = tokens.filter((token) => resolveTokenChain(token) === sourceChain);
+  const destinationTokenOptions = tokens.filter(
+    (token) => resolveTokenChain(token) === destinationChain,
+  );
+
+  useEffect(() => {
+    if (!sourceTokenOptions.length) {
+      setSourceToken("");
+      return;
+    }
+    if (!sourceTokenOptions.some((token) => tokenLabel(token) === sourceToken)) {
+      setSourceToken(tokenLabel(sourceTokenOptions[0]));
+    }
+  }, [sourceChain, sourceTokenOptions, sourceToken]);
+
+  useEffect(() => {
+    if (!destinationTokenOptions.length) {
+      setDestinationToken("");
+      return;
+    }
+    if (!destinationTokenOptions.some((token) => tokenLabel(token) === destinationToken)) {
+      setDestinationToken(tokenLabel(destinationTokenOptions[0]));
+    }
+  }, [destinationChain, destinationTokenOptions, destinationToken]);
+
   const fieldErrors = getFieldErrors(sourceChain, destinationChain, amountSats, recipientAddress);
   const hasErrors = Object.keys(fieldErrors).length > 0;
   const formComplete = isFormComplete(
@@ -81,6 +136,8 @@ export default function HomePage() {
     destinationChain,
     amountSats,
     recipientAddress,
+    sourceToken,
+    destinationToken,
   );
 
   // Auto-fetch quote whenever the form becomes complete and valid
@@ -97,8 +154,8 @@ export default function HomePage() {
       getQuote({
         sourceChain,
         destinationChain,
-        sourceToken: "BTC",
-        destinationToken: "BTC",
+        sourceToken,
+        destinationToken,
         amountSats,
         walletAddress: wallet.address!,
       })
@@ -113,7 +170,16 @@ export default function HomePage() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [sourceChain, destinationChain, amountSats, recipientAddress, wallet.address, formComplete]);
+  }, [
+    sourceChain,
+    destinationChain,
+    sourceToken,
+    destinationToken,
+    amountSats,
+    recipientAddress,
+    wallet.address,
+    formComplete,
+  ]);
 
   const handleConnect = useCallback(() => {
     setWallet({ status: "connecting" });
@@ -191,9 +257,13 @@ export default function HomePage() {
         <BridgeWidget
           sourceChain={sourceChain}
           destinationChain={destinationChain}
+          sourceToken={sourceToken}
+          destinationToken={destinationToken}
           amountSats={amountSats}
           recipientAddress={recipientAddress}
           chainOptions={SUPPORTED_CHAINS}
+          sourceTokenOptions={sourceTokenOptions}
+          destinationTokenOptions={destinationTokenOptions}
           quote={quote}
           ctaLabel="Bridge"
           loading={loading}
@@ -208,6 +278,14 @@ export default function HomePage() {
           }}
           onDestinationChainChange={(chain) => {
             setDestinationChain(chain);
+            setQuote(undefined);
+          }}
+          onSourceTokenChange={(token) => {
+            setSourceToken(token);
+            setQuote(undefined);
+          }}
+          onDestinationTokenChange={(token) => {
+            setDestinationToken(token);
             setQuote(undefined);
           }}
           onAmountSatsChange={(v) => {

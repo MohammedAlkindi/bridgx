@@ -6,11 +6,23 @@ from typing import Any, Dict, List, Optional
 
 import requests as _requests
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 
 from .libs import provider
 
 app = FastAPI(title="Provider API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # BTC/USD price cache: (price_usd, fetched_at_epoch)
 _btc_price_cache: Optional[tuple] = None
@@ -251,7 +263,7 @@ def get_tokens() -> List[TokenInfo]:
     return results
 
 
-@app.post("/provider/token-price", response_model=float)
+@app.post("/token-price", response_model=float)
 def provider_token_price(request: TokenPriceRequest) -> float:
     """Return the USD price for the given token."""
     price = provider.get_token_price(
@@ -265,20 +277,6 @@ def provider_token_price(request: TokenPriceRequest) -> float:
     except (TypeError, ValueError):
         raise HTTPException(status_code=502, detail="Provider token price invalid")
 
-
-@app.get("/token-price", response_model=float)
-def token_price(token_address: str, chain_id: int) -> float:
-    """Return the USD price for any ERC20 token."""
-    price = provider.get_token_price(
-        token_address=token_address,
-        chain_id=chain_id,
-    )
-    if price is None:
-        raise HTTPException(status_code=502, detail="Provider token price failed")
-    try:
-        return float(price)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=502, detail="Provider token price invalid")
 
 @app.post("/assemble", response_model=str)
 def assemble(request: AssembleRequest) -> str:
