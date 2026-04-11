@@ -88,3 +88,8 @@ tbtc_base = Token(address="0x236aa50979d5f3de3bd1eeb40e81137f22ab794b", chain_id
 
 usdc_arbitrum = Token(address="0xaf88d065e77c8cC2239327C5EDb3A432268e5831", chain_id=ARBITRUM_CHAIN_ID)
 wbtc_arbitrum = Token(address="0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f", chain_id=ARBITRUM_CHAIN_ID)
+
+TOKENS = [
+    usdc_avalanche, btcb_avalanche, wbtce_avalanche, usdc_base, cbbtc_base, wbtc_base, tbtc_base, usdc_arbitrum, 
+    wbtc_arbitrum,
+]

@@ -2,7 +2,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import requests as _requests
 from fastapi import FastAPI, HTTPException
@@ -79,6 +79,15 @@ class TokenPayload(BaseModel):
         return self
 
 
+class TokenInfo(BaseModel):
+    address: str
+    symbol: Optional[str] = None
+    name: Optional[str] = None
+    decimals: int
+    chain_id: int
+    chain_name: Optional[str] = None
+
+
 class QuoteRequest(BaseModel):
     sourceChain: str = Field(..., description="Source chain name (e.g. 'base')")
     destinationChain: str = Field(..., description="Destination chain name (e.g. 'arbitrum')")
@@ -124,6 +133,12 @@ class OutputAmountRequest(BaseModel):
     token_out: TokenPayload      # BTC on destination network
     wallet_address: Optional[str] = Field(default=None, description="User wallet address")
     slippage_perc: float = Field(default=0.1, description="Max slippage percent")
+
+
+def _load_tokens():
+    from .libs import token as token_lib
+
+    return token_lib.TOKENS
 
 
 @app.post("/quote", response_model=QuoteResponse)
@@ -211,12 +226,52 @@ def provider_quote(request: ProviderQuoteRequest) -> float:
     return float(quote_data["outAmounts"][0]) / 10**request.token_out.decimals
 
 
+@app.get("/tokens", response_model=List[TokenInfo])
+def get_tokens() -> List[TokenInfo]:
+    try:
+        tokens = _load_tokens()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to load tokens: {exc}")
+
+    results: List[TokenInfo] = []
+    for token in tokens:
+        if token.address is None or token.decimals is None or token.chain_id is None:
+            raise HTTPException(status_code=502, detail="Invalid token data")
+        results.append(
+            TokenInfo(
+                address=token.address,
+                symbol=getattr(token, "symbol", None),
+                name=getattr(token, "name", None),
+                decimals=token.decimals,
+                chain_id=token.chain_id,
+                chain_name=getattr(token, "chain_name", None),
+            )
+        )
+
+    return results
+
+
 @app.post("/provider/token-price", response_model=float)
 def provider_token_price(request: TokenPriceRequest) -> float:
     """Return the USD price for the given token."""
     price = provider.get_token_price(
         token_address=request.token_address,
         chain_id=request.chain_id,
+    )
+    if price is None:
+        raise HTTPException(status_code=502, detail="Provider token price failed")
+    try:
+        return float(price)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=502, detail="Provider token price invalid")
+
+
+@app.get("/token-price", response_model=float)
+def token_price(token_address: str, chain_id: int) -> float:
+    """Return the USD price for any ERC20 token."""
+    price = provider.get_token_price(
+        token_address=token_address,
+        chain_id=chain_id,
     )
     if price is None:
         raise HTTPException(status_code=502, detail="Provider token price failed")
@@ -268,27 +323,3 @@ def output_amount(request: OutputAmountRequest) -> float:
     if not out_amounts_2:
         raise HTTPException(status_code=502, detail="Provider quote 2 missing outAmounts")
     return float(out_amounts_2[0]) / 10**request.token_out.decimals
-
-
-@app.get("/btc-price")
-def btc_price() -> Dict[str, float]:
-    """Return the current BTC/USD price, cached for up to 60 seconds."""
-    global _btc_price_cache
-    now = time.time()
-    if _btc_price_cache is not None and now - _btc_price_cache[1] < _BTC_PRICE_CACHE_TTL_S:
-        return {"usd": _btc_price_cache[0]}
-    try:
-        response = _requests.get(
-            "https://api.coingecko.com/api/v3/simple/price",
-            params={"ids": "bitcoin", "vs_currencies": "usd"},
-            timeout=5,
-        )
-        if response.status_code == 200:
-            price = float(response.json()["bitcoin"]["usd"])
-            _btc_price_cache = (price, now)
-            return {"usd": price}
-    except Exception:
-        pass
-    if _btc_price_cache is not None:
-        return {"usd": _btc_price_cache[0]}
-    raise HTTPException(status_code=502, detail="Failed to fetch BTC price")
