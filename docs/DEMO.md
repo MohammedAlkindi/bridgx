@@ -1,45 +1,40 @@
-# Demo Script
+# Demo script (aligned with current implementation)
 
-## Goal
+## Preconditions
 
-Show a user-friendly BTC bridge experience from quote to transfer tracking.
+- Backend running at `http://localhost:4000`.
+- Frontend running at `http://localhost:3000`.
+- `frontend/.env.local` points to backend (`NEXT_PUBLIC_API_BASE_URL=http://localhost:4000`).
+- MetaMask installed.
+- Wallet funded on Avalanche for source transaction gas/token.
 
-## Prerequisites
+Optional for UI-only walkthrough:
+- Keep default non-production frontend mode (mock fallbacks active).
 
-- Frontend running on `http://localhost:3000`
-- Backend running on `http://localhost:4000`
-- MetaMask installed
-- (Optional) mock mode enabled for fully offline demo stability
+## 5-minute walkthrough
 
-## 5-Minute Demo Narrative
+1. **Open `/` and connect wallet**
+   - Show MetaMask connect button and connected address state.
 
-1. **Open BridgX landing page**
-   - Explain value proposition: BTC value mobility across L2s.
+2. **Select route and token pair**
+   - Source chain remains Avalanche (other source options are disabled in current UI).
+   - Choose destination Base or Arbitrum.
+   - Choose source/destination BTC-family or WETH-family token pair from loaded token lists.
 
-2. **Connect wallet**
-   - Click connect and approve account access.
+3. **Enter amount and show quote**
+   - Enter amount in input.
+   - Explain debounced quote request (`POST /quote`) and route expiry timestamp shown in response data model.
 
-3. **Configure transfer**
-   - Source: Base
-   - Destination: Arbitrum
-   - Amount: `100000` sats
-   - Recipient: valid EVM address
+4. **Submit bridge transaction**
+   - Explain allowance check + approve tx if required.
+   - Explain assembled transaction from backend (`POST /assemble`) then wallet submission.
 
-4. **Show live quote behavior**
-   - Highlight debounce and updated destination sats/ETA.
-   - Mention expiration window and fast reroute potential.
+5. **Show attestation and receipt progression**
+   - UI status text should transition through submitting/waiting messages while backend polls Iris and posts destination relay tx.
+   - Show source/destination explorer links at bottom once hashes are available.
 
-5. **Initiate bridge**
-   - Click Bridge CTA.
-   - Navigate to transfer page and explain status progression model.
+## Honest caveats to mention during demo
 
-6. **Wrap with architecture confidence**
-   - Backend quote orchestration.
-   - On-chain execution primitive.
-   - Roadmap to production orchestration and monitoring.
-
-## Judge-Focused Soundbites
-
-- "BTC-denominated UX removes cognitive tax."
-- "Composable architecture: frontend intent, backend route intelligence, on-chain enforceability."
-- "Production path is clear: orchestration APIs, relayer workers, and audited contracts."
+- `/bridge/[id]` tracking page is not backed by implemented `/bridge/*` backend endpoints yet.
+- Non-production frontend mode can return mock responses for some API calls if backend routes fail.
+- This is a prototype flow and not documented as production-ready.

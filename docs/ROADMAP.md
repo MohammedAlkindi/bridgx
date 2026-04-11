@@ -1,34 +1,38 @@
-# BridgX Roadmap
+# Roadmap
 
-## Phase 0 — Hackathon MVP (Current)
+This file distinguishes current implementation from planned work.
 
-- Quote-first UX for BTC bridge flow.
-- FastAPI quote and provider integration.
-- Source-side execution contract scaffold.
-- Demo compatibility via frontend mock fallbacks.
+## Current baseline (implemented)
 
-## Phase 1 — Production Bridge Orchestration
+- Next.js bridge UI with MetaMask integration.
+- FastAPI quote/assemble/attestation/receipt endpoints.
+- Odos quote + assemble integration.
+- Source-side `SourceExecutor` contract for swap-and-burn path.
+- SQLite-backed temporary quote storage.
 
-- Implement `/bridge/initiate`, `/status`, `/receipt` backend APIs.
-- Persist transfer lifecycle state in durable DB.
-- Add worker/queue for asynchronous attestation polling.
-- Introduce idempotency keys and replay-safe execution.
+## Next priorities (not yet implemented in repository)
 
-## Phase 2 — Reliability & Security Hardening
+1. **Transfer lifecycle APIs**
+   - Implement backend:
+     - `POST /bridge/initiate`
+     - `GET /bridge/{transferId}/status`
+     - `GET /bridge/{transferId}/receipt`
+   - Replace current frontend mock fallback for `/bridge/[id]` tracking path.
 
-- Add structured logging and distributed tracing.
-- Add rate limiting and abuse controls.
-- Add contract test suite expansion (unit + fork + invariant).
-- Commission independent security review.
+2. **Operational reliability**
+   - Move attestation polling out of request thread into worker/queue model.
+   - Add retry/idempotency strategy for destination relay transaction submission.
+   - Add structured logging/metrics.
 
-## Phase 3 — Protocol Expansion
+3. **Configuration hardening**
+   - Explicit per-network `SourceExecutor` configuration beyond Avalanche.
+   - Validate CCTP/TokenMessenger addresses via deployment-specific config.
 
-- Add more BTC-like assets and wrapped variants.
-- Expand supported source/destination chains.
-- Add multi-provider pathfinder with best-execution scoring.
+4. **Testing expansion**
+   - Add attestation/receipt integration tests with controlled mocks.
+   - Add frontend integration/e2e tests for bridge happy path and failures.
+   - Add Solidity test suite outside notebooks.
 
-## Phase 4 — UX and Product Growth
-
-- Unified transfer timeline with live event stream.
-- Gas sponsorship and intent-based one-click execution.
-- Public status page and SLA dashboard.
+5. **Security and release readiness**
+   - Add auth/rate-limit strategy for public API deployment.
+   - External contract + relayer security review.
