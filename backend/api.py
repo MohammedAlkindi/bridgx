@@ -19,6 +19,7 @@ from web3.middleware.proof_of_authority import ExtraDataToPOAMiddleware
 
 from .libs import provider
 from .libs import quote_store
+from .libs import swap_intent_store
 
 app = FastAPI(title="Provider API")
 
@@ -210,6 +211,9 @@ def _get_attestation_state(message_hash: str) -> Dict[str, Any]:
             "destination_tx_hash": None,
             "release_tx_hash": None,
             "release_failures": 0,
+            "swap_tx_hash": None,
+            "swap_failures": 0,
+            "swap_checks": 0,
             "received": False,
             "updated_at": now,
         }
@@ -305,10 +309,22 @@ _DESTINATION_EXECUTOR_ABI: List[Dict[str, Any]] = [
     },
     {
         "inputs": [
+            {"internalType": "uint256", "name": "amountIn", "type": "uint256"},
+            {"internalType": "bytes", "name": "odosData", "type": "bytes"},
+            {"internalType": "address", "name": "outputToken", "type": "address"},
+            {"internalType": "address", "name": "recipient", "type": "address"},
+        ],
+        "name": "executeSwapAndTransfer",
+        "outputs": [],
+        "stateMutability": "payable",
+        "type": "function",
+    },
+    {
+        "inputs": [
             {"internalType": "address", "name": "recipient", "type": "address"},
             {"internalType": "uint256", "name": "amount", "type": "uint256"},
         ],
-        "name": "release",
+        "name": "releaseUsdc",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function",
@@ -400,6 +416,18 @@ class AssembleRequest(BaseModel):
     wallet_address: str = Field(..., description="User wallet address")
 
 
+class SwapIntentRequest(BaseModel):
+    source_tx_hash: str = Field(..., description="Source chain transaction hash")
+    destination_chain: str = Field(..., description="Destination chain name")
+    recipient: str = Field(..., description="Destination recipient address")
+    token_address: str = Field(..., description="Destination token address")
+    token_decimals: int = Field(..., ge=0, le=36)
+
+
+class SwapIntentResponse(BaseModel):
+    status: str
+
+
 class OutputAmountRequest(BaseModel):
     amount_in: Decimal = Field(..., description="Amount of input token")
     token_in: TokenPayload       # BTC on source network
@@ -428,6 +456,8 @@ class AttestationResponse(BaseModel):
     release_status: Optional[str] = Field(default=None, serialization_alias="releaseStatus")
     release_balance: Optional[str] = Field(default=None, serialization_alias="releaseBalance")
     release_needed: Optional[str] = Field(default=None, serialization_alias="releaseNeeded")
+    swap_tx_hash: Optional[str] = Field(default=None, serialization_alias="swapTxHash")
+    swap_status: Optional[str] = Field(default=None, serialization_alias="swapStatus")
 
 
 class ReceiptRequest(BaseModel):
@@ -744,6 +774,27 @@ def assemble(request: AssembleRequest) -> Dict[str, Any]:
     }
 
 
+@app.post("/swap-intent", response_model=SwapIntentResponse)
+def swap_intent(request: SwapIntentRequest) -> SwapIntentResponse:
+    try:
+        destination_chain_id = _resolve_chain_id(request.destination_chain)
+        recipient = Web3.to_checksum_address(request.recipient)
+        token_address = Web3.to_checksum_address(request.token_address)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid swap intent: {exc}") from exc
+
+    swap_intent_store.save_intent(
+        request.source_tx_hash,
+        {
+            "destination_chain_id": destination_chain_id,
+            "recipient": recipient,
+            "token_address": token_address,
+            "token_decimals": int(request.token_decimals),
+        },
+    )
+    return SwapIntentResponse(status="ok")
+
+
 @app.post("/output-amount", response_model=float)
 def output_amount(request: OutputAmountRequest) -> float:
     quote1 = provider.get_quote(
@@ -999,6 +1050,27 @@ def attestation(request: AttestationRequest) -> AttestationResponse:
                     release_status="waiting_receive",
                 )
 
+        intent = swap_intent_store.get_intent(request.source_tx_hash)
+        if intent is None:
+            return AttestationResponse(
+                status="pending",
+                message_hash=message_hash,
+                destination_tx_hash=destination_tx_hash,
+                attestation_source=attestation_source,
+                attestation_status=attestation_status,
+                release_status="missing_intent",
+            )
+
+        if int(intent.get("destination_chain_id", destination_chain_id)) != destination_chain_id:
+            raise HTTPException(status_code=400, detail="Swap intent chain mismatch")
+
+        intent_recipient = Web3.to_checksum_address(intent["recipient"])
+        if intent_recipient.lower() != release_recipient.lower():
+            raise HTTPException(status_code=400, detail="Swap intent recipient mismatch")
+
+        destination_token = Web3.to_checksum_address(intent["token_address"])
+        destination_decimals = int(intent["token_decimals"])
+
         usdc_info = _lookup_token("USDC", destination_chain_id)
         if not usdc_info:
             raise HTTPException(status_code=500, detail="USDC not configured for destination chain")
@@ -1019,142 +1091,250 @@ def attestation(request: AttestationRequest) -> AttestationResponse:
                 release_needed=str(amount_to_release),
             )
 
-        release_tx_hash = state.get("release_tx_hash")
-        release_failures = int(state.get("release_failures", 0))
-        if release_tx_hash:
-            release_receipt = _get_receipt_with_retries(
-                dest_w3,
-                release_tx_hash,
-                _RELEASE_RECEIPT_ATTEMPTS,
-                _RELEASE_RECEIPT_INTERVAL_S,
+        release_contract = dest_w3.eth.contract(
+            address=destination_executor_checksum,
+            abi=_DESTINATION_EXECUTOR_ABI,
+        )
+        contract_relayer = release_contract.functions.relayer().call()
+        if Web3.to_checksum_address(contract_relayer) != relayer.address:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "DestinationExecutor relayer mismatch: "
+                    f"contract={contract_relayer} backend={relayer.address}"
+                ),
             )
-            if release_receipt and release_receipt.get("status") == 1:
+
+        if destination_token.lower() == Web3.to_checksum_address(usdc_info[0]).lower():
+            release_tx_hash = state.get("release_tx_hash")
+            release_failures = int(state.get("release_failures", 0))
+            if release_tx_hash:
+                release_receipt = _get_receipt_with_retries(
+                    dest_w3,
+                    release_tx_hash,
+                    _RELEASE_RECEIPT_ATTEMPTS,
+                    _RELEASE_RECEIPT_INTERVAL_S,
+                )
+                if release_receipt and release_receipt.get("status") == 1:
+                    return AttestationResponse(
+                        status="complete",
+                        message_hash=message_hash,
+                        destination_tx_hash=destination_tx_hash,
+                        release_tx_hash=release_tx_hash,
+                        attestation_source=attestation_source,
+                        attestation_status=attestation_status,
+                        release_status="confirmed",
+                    )
+                if release_receipt and release_receipt.get("status") == 0:
+                    state["release_failures"] = release_failures + 1
+                    state["release_tx_hash"] = None
+                    state["checks"] = 0
+                    release_tx_hash = None
+                else:
+                    return AttestationResponse(
+                        status="pending",
+                        message_hash=message_hash,
+                        destination_tx_hash=destination_tx_hash,
+                        release_tx_hash=release_tx_hash,
+                        attestation_source=attestation_source,
+                        attestation_status=attestation_status,
+                        release_status="pending",
+                    )
+
+            if release_failures > 0:
+                state["checks"] = int(state.get("checks", 0)) + 1
+                if state["checks"] % _RELEASE_DELAY_CHECKS != 0:
+                    return AttestationResponse(
+                        status="pending",
+                        message_hash=message_hash,
+                        destination_tx_hash=destination_tx_hash,
+                        attestation_source=attestation_source,
+                        attestation_status=attestation_status,
+                        release_status="cooldown",
+                    )
+
+            try:
+                release_data = _encode_contract_call(
+                    release_contract,
+                    "releaseUsdc",
+                    [release_recipient, amount_to_release],
+                )
+                base_nonce = dest_w3.eth.get_transaction_count(relayer.address, "pending")
+                release_tx_params: Dict[str, Any] = {
+                    "from": relayer.address,
+                    "to": destination_executor_checksum,
+                    "data": release_data,
+                    "nonce": base_nonce,
+                    "chainId": destination_chain_id,
+                    "gas": _DESTINATION_RELEASE_GAS,
+                    "value": 0,
+                }
+                if base_fee is not None:
+                    release_tx_params["maxPriorityFeePerGas"] = priority_fee
+                    release_tx_params["maxFeePerGas"] = base_fee * 2 + priority_fee
+                else:
+                    release_tx_params["gasPrice"] = dest_w3.eth.gas_price
+
+                release_signed = relayer.sign_transaction(release_tx_params)
+                release_tx_hash = dest_w3.eth.send_raw_transaction(release_signed.raw_transaction).hex()
+                logger.info("release usdc tx sent: %s", release_tx_hash)
+                state["release_tx_hash"] = release_tx_hash
+            except Exception as exc:
+                state["release_failures"] = release_failures + 1
+                state["checks"] = 0
+                logger.info("release attempt failed: %s", exc)
                 return AttestationResponse(
                     status="complete",
                     message_hash=message_hash,
                     destination_tx_hash=destination_tx_hash,
-                    release_tx_hash=release_tx_hash,
                     attestation_source=attestation_source,
                     attestation_status=attestation_status,
-                    release_status="confirmed",
-                )
-            if release_receipt and release_receipt.get("status") == 0:
-                state["release_failures"] = release_failures + 1
-                state["release_tx_hash"] = None
-                state["checks"] = 0
-                release_tx_hash = None
-            else:
-                return AttestationResponse(
-                    status="pending",
-                    message_hash=message_hash,
-                    destination_tx_hash=destination_tx_hash,
-                    release_tx_hash=release_tx_hash,
-                    attestation_source=attestation_source,
-                    attestation_status=attestation_status,
-                    release_status="pending",
+                    release_status="failed",
                 )
 
-        if release_failures > 0:
-            state["checks"] = int(state.get("checks", 0)) + 1
-            if state["checks"] % _RELEASE_DELAY_CHECKS != 0:
-                return AttestationResponse(
-                    status="pending",
-                    message_hash=message_hash,
-                    destination_tx_hash=destination_tx_hash,
-                    attestation_source=attestation_source,
-                    attestation_status=attestation_status,
-                    release_status="cooldown",
-                )
-
-        try:
-            release_contract = dest_w3.eth.contract(
-                address=destination_executor_checksum,
-                abi=_DESTINATION_EXECUTOR_ABI,
-            )
-            contract_relayer = release_contract.functions.relayer().call()
-            if Web3.to_checksum_address(contract_relayer) != relayer.address:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "DestinationExecutor relayer mismatch: "
-                        f"contract={contract_relayer} backend={relayer.address}"
-                    ),
-                )
-            release_data = _encode_contract_call(
-                release_contract,
-                "release",
-                [release_recipient, amount_to_release],
-            )
-            base_nonce = dest_w3.eth.get_transaction_count(relayer.address, "pending")
-            release_tx_params: Dict[str, Any] = {
-                "from": relayer.address,
-                "to": destination_executor_checksum,
-                "data": release_data,
-                "nonce": base_nonce,
-                "chainId": destination_chain_id,
-                "gas": _DESTINATION_RELEASE_GAS,
-                "value": 0,
-            }
-            if base_fee is not None:
-                release_tx_params["maxPriorityFeePerGas"] = priority_fee
-                release_tx_params["maxFeePerGas"] = base_fee * 2 + priority_fee
-            else:
-                release_tx_params["gasPrice"] = dest_w3.eth.gas_price
-
-            release_signed = relayer.sign_transaction(release_tx_params)
-            release_tx_hash = dest_w3.eth.send_raw_transaction(release_signed.raw_transaction).hex()
-            logger.info("release tx sent: %s", release_tx_hash)
-            state["release_tx_hash"] = release_tx_hash
-        except Exception as exc:
-            state["release_failures"] = release_failures + 1
-            state["checks"] = 0
-            logger.info("release attempt failed: %s", exc)
             return AttestationResponse(
-                status="complete",
-                message_hash=message_hash,
-                destination_tx_hash=destination_tx_hash,
-                attestation_source=attestation_source,
-                attestation_status=attestation_status,
-                release_status="failed",
-            )
-
-        release_receipt = _get_receipt_with_retries(
-            dest_w3,
-            release_tx_hash,
-            _RELEASE_RECEIPT_ATTEMPTS,
-            _RELEASE_RECEIPT_INTERVAL_S,
-        )
-        if release_receipt and release_receipt.get("status") == 1:
-            return AttestationResponse(
-                status="complete",
+                status="pending",
                 message_hash=message_hash,
                 destination_tx_hash=destination_tx_hash,
                 release_tx_hash=release_tx_hash,
                 attestation_source=attestation_source,
                 attestation_status=attestation_status,
-                release_status="confirmed",
+                release_status="submitted",
             )
-        if release_receipt and release_receipt.get("status") == 0:
-            state["release_failures"] = release_failures + 1
-            state["release_tx_hash"] = None
-            state["checks"] = 0
+
+        swap_tx_hash = state.get("swap_tx_hash")
+        swap_failures = int(state.get("swap_failures", 0))
+        if swap_tx_hash:
+            swap_receipt = _get_receipt_with_retries(
+                dest_w3,
+                swap_tx_hash,
+                _RELEASE_RECEIPT_ATTEMPTS,
+                _RELEASE_RECEIPT_INTERVAL_S,
+            )
+            if swap_receipt and swap_receipt.get("status") == 1:
+                return AttestationResponse(
+                    status="complete",
+                    message_hash=message_hash,
+                    destination_tx_hash=destination_tx_hash,
+                    attestation_source=attestation_source,
+                    attestation_status=attestation_status,
+                    swap_tx_hash=swap_tx_hash,
+                    swap_status="confirmed",
+                )
+            if swap_receipt and swap_receipt.get("status") == 0:
+                state["swap_failures"] = swap_failures + 1
+                state["swap_tx_hash"] = None
+                state["swap_checks"] = 0
+                swap_tx_hash = None
+            else:
+                return AttestationResponse(
+                    status="pending",
+                    message_hash=message_hash,
+                    destination_tx_hash=destination_tx_hash,
+                    attestation_source=attestation_source,
+                    attestation_status=attestation_status,
+                    swap_tx_hash=swap_tx_hash,
+                    swap_status="pending",
+                )
+
+        if swap_failures > 0:
+            state["swap_checks"] = int(state.get("swap_checks", 0)) + 1
+            if state["swap_checks"] % _RELEASE_DELAY_CHECKS != 0:
+                return AttestationResponse(
+                    status="pending",
+                    message_hash=message_hash,
+                    destination_tx_hash=destination_tx_hash,
+                    attestation_source=attestation_source,
+                    attestation_status=attestation_status,
+                    swap_status="cooldown",
+                )
+
+        amount_in = Decimal(amount_to_release) / Decimal(10**usdc_info[1])
+        quote = provider.get_quote(
+            amount_in=amount_in,
+            token_in=TokenPayload(address=usdc_info[0], decimals=usdc_info[1], chain_id=destination_chain_id),
+            token_out=TokenPayload(address=destination_token, decimals=destination_decimals, chain_id=destination_chain_id),
+            wallet_address=destination_executor_checksum,
+            slippage_perc=0.1,
+        )
+        if quote is None:
+            return AttestationResponse(
+                status="pending",
+                message_hash=message_hash,
+                destination_tx_hash=destination_tx_hash,
+                attestation_source=attestation_source,
+                attestation_status=attestation_status,
+                swap_status="quote_failed",
+            )
+
+        assembled = provider.assemble(quote=quote, wallet_address=destination_executor_checksum)
+        if assembled is None or not assembled.get("transaction"):
+            return AttestationResponse(
+                status="pending",
+                message_hash=message_hash,
+                destination_tx_hash=destination_tx_hash,
+                attestation_source=attestation_source,
+                attestation_status=attestation_status,
+                swap_status="assemble_failed",
+            )
+        odos_data = assembled["transaction"].get("data")
+        if not odos_data:
+            return AttestationResponse(
+                status="pending",
+                message_hash=message_hash,
+                destination_tx_hash=destination_tx_hash,
+                attestation_source=attestation_source,
+                attestation_status=attestation_status,
+                swap_status="assemble_missing_data",
+            )
+
+        try:
+            swap_fn = release_contract.functions.executeSwapAndTransfer(
+                int(amount_to_release),
+                Web3.to_bytes(hexstr=odos_data),
+                destination_token,
+                release_recipient,
+            )
+            gas_estimate = swap_fn.estimate_gas({"from": relayer.address})
+            base_nonce = dest_w3.eth.get_transaction_count(relayer.address, "pending")
+            tx_params: Dict[str, Any] = {
+                "from": relayer.address,
+                "nonce": base_nonce,
+                "chainId": destination_chain_id,
+                "gas": int(gas_estimate * 1.2),
+            }
+            if base_fee is not None:
+                tx_params["maxPriorityFeePerGas"] = priority_fee
+                tx_params["maxFeePerGas"] = base_fee * 2 + priority_fee
+            else:
+                tx_params["gasPrice"] = dest_w3.eth.gas_price
+
+            swap_tx = swap_fn.build_transaction(tx_params)
+            signed_swap = relayer.sign_transaction(swap_tx)
+            swap_tx_hash = dest_w3.eth.send_raw_transaction(signed_swap.raw_transaction).hex()
+            logger.info("swap tx sent: %s", swap_tx_hash)
+            state["swap_tx_hash"] = swap_tx_hash
+        except Exception as exc:
+            state["swap_failures"] = swap_failures + 1
+            state["swap_checks"] = 0
+            logger.info("swap attempt failed: %s", exc)
             return AttestationResponse(
                 status="complete",
                 message_hash=message_hash,
                 destination_tx_hash=destination_tx_hash,
                 attestation_source=attestation_source,
                 attestation_status=attestation_status,
-                release_status="failed",
+                swap_status="failed",
             )
 
         return AttestationResponse(
-            status="complete",
+            status="pending",
             message_hash=message_hash,
             destination_tx_hash=destination_tx_hash,
-            release_tx_hash=release_tx_hash,
             attestation_source=attestation_source,
             attestation_status=attestation_status,
-            release_status="pending",
+            swap_tx_hash=swap_tx_hash,
+            swap_status="submitted",
         )
     except HTTPException:
         raise

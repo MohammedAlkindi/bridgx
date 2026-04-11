@@ -3,6 +3,8 @@ import type {
   BridgeInitiateResponse,
   AssembleRequest,
   AssembledTransaction,
+  SwapIntentRequest,
+  SwapIntentResponse,
   AttestationRequest,
   AttestationResponse,
   NetworkInfo,
@@ -130,6 +132,38 @@ export async function assembleTx(request: AssembleRequest): Promise<AssembledTra
     body: JSON.stringify({
       quote_id: request.quoteId,
       wallet_address: request.walletAddress,
+    }),
+  });
+}
+
+export async function registerSwapIntent(
+  request: SwapIntentRequest,
+): Promise<SwapIntentResponse> {
+  if (MOCK_API_ENABLED) {
+    try {
+      return await requestJson<SwapIntentResponse>("/swap-intent", {
+        method: "POST",
+        body: JSON.stringify({
+          source_tx_hash: request.sourceTxHash,
+          destination_chain: request.destinationChain,
+          recipient: request.recipient,
+          token_address: request.tokenAddress,
+          token_decimals: request.tokenDecimals,
+        }),
+      });
+    } catch {
+      return { status: "mock" };
+    }
+  }
+
+  return requestJson<SwapIntentResponse>("/swap-intent", {
+    method: "POST",
+    body: JSON.stringify({
+      source_tx_hash: request.sourceTxHash,
+      destination_chain: request.destinationChain,
+      recipient: request.recipient,
+      token_address: request.tokenAddress,
+      token_decimals: request.tokenDecimals,
     }),
   });
 }

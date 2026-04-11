@@ -11,6 +11,7 @@ import {
   getTokenBalance,
   getTokenPrice,
   getTokens,
+  registerSwapIntent,
   requestAttestation,
 } from "../lib/api";
 import {
@@ -238,6 +239,7 @@ export default function HomePage() {
   const [sourceTxHash, setSourceTxHash] = useState<TxHash | undefined>();
   const [destinationTxHash, setDestinationTxHash] = useState<TxHash | undefined>();
   const [releaseTxHash, setReleaseTxHash] = useState<TxHash | undefined>();
+  const [swapTxHash, setSwapTxHash] = useState<TxHash | undefined>();
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const walletAddressRef = useRef<string | undefined>();
@@ -606,6 +608,7 @@ export default function HomePage() {
     setSourceTxHash(undefined);
     setDestinationTxHash(undefined);
     setReleaseTxHash(undefined);
+    setSwapTxHash(undefined);
     setBridgeStatus("Preparing transaction...");
     try {
       const allowanceHex = (await ethereum.request({
@@ -650,6 +653,18 @@ export default function HomePage() {
       setSourceTxHash(txHash as TxHash);
       setBridgeStatus(`Source tx submitted: ${txHash}`);
 
+      if (!destinationTokenInfo) {
+        setBridgeStatus("Destination token is not available.");
+        return;
+      }
+      await registerSwapIntent({
+        sourceTxHash: txHash as TxHash,
+        destinationChain,
+        recipient: wallet.address,
+        tokenAddress: destinationTokenInfo.address,
+        tokenDecimals: destinationTokenInfo.decimals,
+      });
+
       let attestation;
       for (let attempt = 0; attempt < 6; attempt += 1) {
         attestation = await requestAttestation({
@@ -677,6 +692,9 @@ export default function HomePage() {
       setDestinationTxHash(destinationTxHash);
       if (attestation.releaseTxHash) {
         setReleaseTxHash(attestation.releaseTxHash as TxHash);
+      }
+      if (attestation.swapTxHash) {
+        setSwapTxHash(attestation.swapTxHash as TxHash);
       }
       setBridgeStatus(`Destination tx submitted: ${destinationTxHash}`);
 
@@ -707,6 +725,7 @@ export default function HomePage() {
   }, [
     amountBaseUnits,
     destinationChain,
+    destinationTokenInfo,
     insufficientFunds,
     isSubmitting,
     quote,
@@ -801,7 +820,7 @@ export default function HomePage() {
           onSubmit={wallet.address ? handleSubmit : handleConnect}
         />
 
-        {(sourceTxHash || destinationTxHash || releaseTxHash) && (
+        {(sourceTxHash || destinationTxHash || releaseTxHash || swapTxHash) && (
           <div
             style={{
               marginTop: 12,
@@ -836,6 +855,19 @@ export default function HomePage() {
                   style={{ color: "#4a6080" }}
                 >
                   {destinationTxHash}
+                </a>
+              </div>
+            )}
+            {swapTxHash && (
+              <div>
+                Swap tx:{" "}
+                <a
+                  href={`${EXPLORER_TX_URLS[destinationChain]}${swapTxHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "#4a6080" }}
+                >
+                  {swapTxHash}
                 </a>
               </div>
             )}
