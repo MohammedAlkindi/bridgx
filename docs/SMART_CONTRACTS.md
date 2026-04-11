@@ -1,52 +1,46 @@
-# Smart Contracts
+# Smart contracts
 
-## SourceExecutor.sol
+## `solidity/SourceExecutor.sol`
 
-`SourceExecutor` is the source-chain execution primitive responsible for:
-1. Collecting input token from caller.
-2. Executing Odos swap via provided calldata.
-3. Measuring resulting USDC output.
-4. Burning USDC through token messenger with hook data.
+Single contract in repository: `SourceExecutor` (Solidity `^0.8.19`).
 
-## Constructor Immutables
+### Constructor immutables
 
-- `owner`
+- `owner` (deployer)
 - `odosRouter`
 - `usdc`
 - `tokenMessenger`
 
-All are set at deployment and immutable for gas efficiency and integrity.
-
-## Primary Method
+All must be non-zero or deployment reverts with `ZeroAddress`.
 
 ### `executeSwapAndBurn(...)`
 
-Validations and flow:
-- Rejects native ETH value.
-- Pulls ERC20 input from user.
-- Approves router and executes swap calldata.
-- Requires non-zero USDC out.
-- Approves token messenger.
-- Calls `depositForBurnWithHook(...)`.
-- Emits `SwapAndBurnExecuted` event.
+Implemented behavior:
+1. Rejects native value (`msg.value != 0` -> `NativeValueNotAllowed`).
+2. Pulls `inputToken` from caller via `transferFrom`.
+3. Approves Odos router (`approve(0)` then `approve(amountIn)`).
+4. Executes Odos calldata with low-level `call`.
+5. Measures `usdcOut` as post-balance minus pre-balance.
+6. Reverts if `usdcOut == 0`.
+7. Approves TokenMessenger for `usdcOut`.
+8. Calls `depositForBurnWithHook`.
+9. Emits `SwapAndBurnExecuted`.
 
-## Admin Recovery Methods
+### Admin recovery methods
 
-- `rescueToken(token, to, amount)`
-- `rescueNative(to, amount)`
+- `rescueToken(token, to, amount)` - owner only
+- `rescueNative(to, amount)` - owner only
 
-Both are owner-gated and emit recovery events.
+Both validate recipient and emit events.
 
-## Safety Patterns Used
+### ERC20 safety helpers used
 
-- Optional-return-aware ERC20 wrapper calls.
-- Force-approve pattern (approve 0 then approve amount).
-- Custom errors for efficient revert signaling.
+- `_callOptionalReturn` style low-level token call handling.
+- Explicit revert for call failure or boolean false return.
+- Force-approve pattern for compatibility with tokens requiring approve reset.
 
-## Audit Checklist (Suggested)
+## What is not present in this repo
 
-- Validate assumptions on `odosData` calldata trust boundaries.
-- Verify destination domain / caller invariants.
-- Confirm no reentrancy-sensitive accounting assumptions.
-- Ensure rescue functions align with governance policy.
-- Add fuzz/invariant tests for malformed token behavior.
+- No Foundry/Hardhat project scaffolding.
+- No Solidity unit/invariant test suite in `.sol` test form.
+- Only Jupyter notebooks are provided for deployment/e2e experiments.

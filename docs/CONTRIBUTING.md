@@ -1,17 +1,9 @@
-# Contributing to BridgX
+# Contributing
 
-Thanks for your interest in improving BridgX.
-
-## Development Setup
-
-### Frontend
-```bash
-cd frontend
-npm install
-npm run dev
-```
+## Local setup
 
 ### Backend
+
 ```bash
 cd backend
 python -m venv .venv
@@ -20,30 +12,44 @@ pip install -r requirements.txt
 uvicorn api:app --reload --port 4000
 ```
 
-## Branching and Commits
+### Frontend
 
-- Create focused branches per feature/fix.
-- Keep commits atomic and descriptive.
-- Reference issue IDs in commit messages where possible.
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-## Code Quality Expectations
+Recommended frontend env file:
 
-- Prefer explicit typing in TypeScript and Python models.
-- Keep API contract changes synchronized across backend and frontend types.
-- Add/update tests whenever behavior changes.
-- Preserve clear error handling semantics.
+```env
+NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
+NEXT_PUBLIC_USE_MOCK_API=false
+```
 
-## Pull Requests
+## Running tests/checks
 
-PRs should include:
-- What changed.
-- Why it changed.
-- How it was tested.
-- Any migration or compatibility notes.
+Backend tests:
 
-## Suggested Next Contributions
+```bash
+cd backend
+pytest
+```
 
-- Implement missing bridge orchestration endpoints.
-- Add persistent state storage for transfer lifecycle.
-- Build e2e tests covering quote -> initiate -> completion flow.
-- Improve observability (metrics + tracing).
+Frontend has no configured test script in `package.json` at the time of writing.
+
+## Contribution scope guidance
+
+High-impact contribution areas based on current gaps:
+- Implement backend `/bridge/*` lifecycle endpoints used by `frontend/app/bridge/[id]/page.tsx`.
+- Improve consistency between amount units in frontend input/labeling and backend request fields.
+- Add integration tests for `/attestation` and `/receipt` behavior.
+- Add Solidity test project (Foundry/Hardhat) for `SourceExecutor`.
+
+## PR expectations
+
+Include in your PR:
+- Summary of behavior changes.
+- Exact API/contract/UI surfaces affected.
+- Commands run for verification and their outcomes.
+- Documentation updates when behavior changes.
