@@ -21,6 +21,7 @@ html {
 :root {
   --nav-link-color: #7a90b8;
   --nav-link-hover-color: #cc7810;
+  --brand-accent-color: #F7931A;
 }
 
 .nav-link {

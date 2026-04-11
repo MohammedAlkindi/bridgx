@@ -139,9 +139,7 @@ export default function BridgeWidget({
   const accentTextClass = isWalletConnected ? "text-emerald-400" : "text-[#F7931A]";
   const accentTextMutedClass = isWalletConnected ? "text-emerald-700" : "text-[#cc7810]";
   const refreshHoverClass = isWalletConnected ? "hover:text-emerald-300" : "hover:text-[#ffb347]";
-  const swapAccentClass = isWalletConnected
-    ? "text-emerald-400 hover:text-emerald-300 hover:border-emerald-400/60"
-    : "text-[#F7931A] hover:text-[#ffb347] hover:border-[#F7931A]/60";
+  const swapAccentClass = "text-[#3d5070] border-[#1e2d5a] opacity-60";
 
   return (
     <section className="w-full rounded-2xl border border-[#1e2a4a] bg-[#0f1630] shadow-xl" style={{ overflow: "hidden" }}>
@@ -164,7 +162,11 @@ export default function BridgeWidget({
               className="w-full rounded-lg border border-[#1e2d5a] bg-[#090e1f] px-3 py-2.5 text-sm text-[#e2e8ff] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20"
             >
               {chainOptions.map((chain) => (
-                <option key={chain} value={chain} disabled={chain === destinationChain}>
+                <option
+                  key={chain}
+                  value={chain}
+                  disabled={chain === destinationChain || chain === "base" || chain === "arbitrum"}
+                >
                   {CHAIN_LABELS[chain]}
                 </option>
               ))}
@@ -179,6 +181,7 @@ export default function BridgeWidget({
             <button
               type="button"
               onClick={onSwapChains}
+              disabled
               aria-label="Swap source and destination chains"
               title="Swap chains"
               className={[
@@ -279,6 +282,32 @@ export default function BridgeWidget({
             <label htmlFor="amount-sats" className="block text-[11px] font-semibold uppercase tracking-wider text-[#5a6d9a]">
               {amountInLabel}
             </label>
+          </div>
+          <div className="relative">
+            <input
+              id="amount-sats"
+              type="text"
+              inputMode="numeric"
+              placeholder="100000"
+              value={amountSats}
+              onChange={(e) => onAmountSatsChange(e.target.value)}
+              className="w-full rounded-lg border border-[#1e2d5a] bg-[#090e1f] py-2.5 pl-3 pr-24 text-sm text-[#e2e8ff] placeholder-[#3d5070] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20"
+            />
+            <div className="absolute inset-y-0 right-3 flex items-center gap-2">
+              {walletBalanceTokens !== undefined && (
+                <button
+                  type="button"
+                  onClick={() => onAmountSatsChange(String(walletBalanceTokens))}
+                  className="text-[10px] font-bold leading-none px-1.5 py-0.5 rounded border border-emerald-400/40 text-emerald-400 hover:bg-emerald-400/10 transition-colors"
+                >
+                  MAX
+                </button>
+              )}
+              <span className="text-xs font-medium text-[#4a5a8a]">{sourceToken || "token"}</span>
+            </div>
+          </div>
+
+          <div className="mt-1.5 flex justify-end">
             <button
               type="button"
               onClick={onRefreshQuote}
@@ -313,29 +342,6 @@ export default function BridgeWidget({
                 />
               </svg>
             </button>
-          </div>
-          <div className="relative">
-            <input
-              id="amount-sats"
-              type="text"
-              inputMode="numeric"
-              placeholder="100000"
-              value={amountSats}
-              onChange={(e) => onAmountSatsChange(e.target.value)}
-              className="w-full rounded-lg border border-[#1e2d5a] bg-[#090e1f] py-2.5 pl-3 pr-24 text-sm text-[#e2e8ff] placeholder-[#3d5070] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20"
-            />
-            <div className="absolute inset-y-0 right-3 flex items-center gap-2">
-              {walletBalanceTokens !== undefined && (
-                <button
-                  type="button"
-                  onClick={() => onAmountSatsChange(String(walletBalanceTokens))}
-                  className="text-[10px] font-bold leading-none px-1.5 py-0.5 rounded border border-emerald-400/40 text-emerald-400 hover:bg-emerald-400/10 transition-colors"
-                >
-                  MAX
-                </button>
-              )}
-              <span className="text-xs font-medium text-[#4a5a8a]">{sourceToken || "token"}</span>
-            </div>
           </div>
 
           {/* USD + Balance */}
@@ -406,10 +412,6 @@ export default function BridgeWidget({
           )}
         </div>
 
-        {/* Route attribution */}
-        <p className="mt-2.5 text-center text-[11px] text-[#2e3f5a]">
-          Routed via Odos · Settled via Circle CCTP
-        </p>
       </div>
 
       {/* ── Info / Error messages ────────────────────────────────── */}
@@ -445,12 +447,11 @@ export default function BridgeWidget({
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
               </svg>
-              Processing…
+              Updating quotes...
             </span>
           ) : (
             <span className="inline-flex items-center justify-center gap-2">
               {ctaLabel}
-              {!isSubmitDisabled && <span aria-hidden="true" style={{ opacity: 0.8 }}>→</span>}
             </span>
           )}
         </button>

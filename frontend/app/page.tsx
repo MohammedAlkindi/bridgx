@@ -12,7 +12,13 @@ import {
   getTokens,
   initiateBridge,
 } from "../lib/api";
-import { connectMetaMask, isValidEvmAddress, type WalletState } from "../lib/wallet";
+import {
+  connectMetaMask,
+  disconnectMetaMask,
+  isValidEvmAddress,
+  requestWalletPermissions,
+  type WalletState,
+} from "../lib/wallet";
 import {
   SUPPORTED_CHAINS,
   type NetworkInfo,
@@ -48,6 +54,16 @@ function parseScaledAmount(input: string): string | null {
   const fracPadded = (frac + "00000000").slice(0, 8);
   const scaled = BigInt(whole) * SATS_MULTIPLIER + BigInt(fracPadded);
   return scaled.toString();
+}
+
+function parseAmountToBaseUnits(amount: string, decimals: number): bigint | null {
+  const trimmed = amount.trim();
+  if (!trimmed) return null;
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
+  const [whole, frac = ""] = trimmed.split(".");
+  const padded = decimals > 0 ? (frac + "0".repeat(decimals)).slice(0, decimals) : "";
+  const base = BigInt(whole) * 10n ** BigInt(decimals) + (padded ? BigInt(padded) : 0n);
+  return base;
 }
 
 
@@ -145,6 +161,8 @@ export default function HomePage() {
   const [tokenUsdPrice, setTokenUsdPrice] = useState<number | undefined>();
   const [destinationTokenUsdPrice, setDestinationTokenUsdPrice] = useState<number | undefined>();
   const [walletBalanceTokens, setWalletBalanceTokens] = useState<string | undefined>();
+  const [walletBalanceRaw, setWalletBalanceRaw] = useState<bigint | undefined>();
+  const [shouldPromptConnect, setShouldPromptConnect] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const walletAddressRef = useRef<string | undefined>();
@@ -157,6 +175,8 @@ export default function HomePage() {
     if (typeof document === "undefined") return;
     const hoverColor = wallet.address ? "#047857" : "#cc7810";
     document.documentElement.style.setProperty("--nav-link-hover-color", hoverColor);
+    const brandColor = wallet.address ? "#34d399" : "#F7931A";
+    document.documentElement.style.setProperty("--brand-accent-color", brandColor);
   }, [wallet.address]);
 
   useEffect(() => {
@@ -193,12 +213,16 @@ export default function HomePage() {
         if (!accounts || accounts.length === 0) {
           setWallet({ status: "disconnected" });
           setWalletBalanceTokens(undefined);
+          setWalletBalanceRaw(undefined);
+          setShouldPromptConnect(true);
           return;
         }
         const address = accounts[0];
         if (!isValidEvmAddress(address)) {
           setWallet({ status: "disconnected" });
           setWalletBalanceTokens(undefined);
+          setWalletBalanceRaw(undefined);
+          setShouldPromptConnect(true);
           setErrorMessage("Invalid address returned from MetaMask.");
           return;
         }
@@ -206,6 +230,8 @@ export default function HomePage() {
       } catch (err) {
         setWallet({ status: "disconnected" });
         setWalletBalanceTokens(undefined);
+        setWalletBalanceRaw(undefined);
+        setShouldPromptConnect(true);
         setErrorMessage(err instanceof Error ? err.message : "Failed to read MetaMask accounts.");
       }
     };
@@ -215,6 +241,8 @@ export default function HomePage() {
       if (list.length === 0) {
         setWallet({ status: "disconnected" });
         setWalletBalanceTokens(undefined);
+        setWalletBalanceRaw(undefined);
+        setShouldPromptConnect(true);
         return;
       }
       const address = list[0];
@@ -225,12 +253,16 @@ export default function HomePage() {
       }
       setWallet({ status: "disconnected" });
       setWalletBalanceTokens(undefined);
+      setWalletBalanceRaw(undefined);
+      setShouldPromptConnect(true);
       setErrorMessage("Invalid address returned from MetaMask.");
     };
 
     const handleDisconnect = () => {
       setWallet({ status: "disconnected" });
-          setWalletBalanceTokens(undefined);
+      setWalletBalanceTokens(undefined);
+      setWalletBalanceRaw(undefined);
+      setShouldPromptConnect(true);
     };
 
     void syncAccounts();
@@ -312,6 +344,7 @@ export default function HomePage() {
   useEffect(() => {
     if (!wallet.address || !sourceTokenInfo) {
       setWalletBalanceTokens(undefined);
+      setWalletBalanceRaw(undefined);
       return;
     }
 
@@ -326,9 +359,15 @@ export default function HomePage() {
         );
         const raw = BigInt(response.balance);
         const balance = formatTokenBalance(raw, sourceTokenInfo.decimals);
-        if (!cancelled) setWalletBalanceTokens(balance);
+        if (!cancelled) {
+          setWalletBalanceTokens(balance);
+          setWalletBalanceRaw(raw);
+        }
       } catch {
-        if (!cancelled) setWalletBalanceTokens(undefined);
+        if (!cancelled) {
+          setWalletBalanceTokens(undefined);
+          setWalletBalanceRaw(undefined);
+        }
       }
     };
 
@@ -348,9 +387,21 @@ export default function HomePage() {
     sourceToken,
     destinationToken,
   );
-  const canSubmit = wallet.address ? quoteReady && !!quote : true;
-  const ctaLabel = wallet.address ? "Bridge" : "Connect wallet";
-  const ctaVariant = wallet.address ? "green" : "orange";
+  const isWalletConnected = !!wallet.address;
+  const amountBaseUnits =
+    isWalletConnected && sourceTokenInfo ? parseAmountToBaseUnits(amountSats, sourceTokenInfo.decimals) : null;
+  const insufficientFunds =
+    isWalletConnected &&
+    amountBaseUnits !== null &&
+    walletBalanceRaw !== undefined &&
+    amountBaseUnits > walletBalanceRaw;
+  const canSubmit = isWalletConnected ? quoteReady && !!quote && !insufficientFunds : true;
+  const ctaLabel = !isWalletConnected
+    ? "Connect wallet"
+    : insufficientFunds
+      ? "Insufficient funds"
+      : "Bridge";
+  const ctaVariant = isWalletConnected ? "green" : "orange";
 
   const fetchQuote = useCallback(async () => {
     if (!quoteReady) {
@@ -419,18 +470,25 @@ export default function HomePage() {
   const handleConnect = useCallback(async () => {
     setWallet({ status: "connecting" });
     try {
+      if (shouldPromptConnect) {
+        await requestWalletPermissions();
+      }
       const address = await connectMetaMask();
       setWallet({ status: "connected", address });
+      setShouldPromptConnect(false);
       setErrorMessage("");
     } catch (err) {
       setWallet({ status: "disconnected" });
       setErrorMessage(err instanceof Error ? err.message : "Failed to connect wallet.");
     }
-  }, []);
+  }, [shouldPromptConnect]);
 
-  const handleDisconnect = useCallback(() => {
+  const handleDisconnect = useCallback(async () => {
+    await disconnectMetaMask();
     setWallet({ status: "disconnected" });
     setWalletBalanceTokens(undefined);
+    setWalletBalanceRaw(undefined);
+    setShouldPromptConnect(true);
     setErrorMessage("");
   }, []);
 
@@ -447,15 +505,8 @@ export default function HomePage() {
   }, [destinationChain, destinationToken]);
 
   const handleSubmit = useCallback(async () => {
-    if (!wallet.address) {
-      setErrorMessage("Connect your wallet to continue.");
-      return;
-    }
-    if (!wallet.address) {
-      await handleConnect();
-      return;
-    }
-    if (!quoteReady || !quote) return;
+    if (!wallet.address) return;
+    if (!quoteReady || !quote || insufficientFunds) return;
 
     setLoading(true);
     setErrorMessage("");
@@ -469,7 +520,7 @@ export default function HomePage() {
       setErrorMessage(err instanceof Error ? err.message : "Bridge initiation failed.");
       setLoading(false);
     }
-  }, [handleConnect, quoteReady, quote, router, wallet.address]);
+  }, [insufficientFunds, quoteReady, quote, router, wallet.address]);
 
   return (
     <section>
@@ -494,10 +545,10 @@ export default function HomePage() {
                 lineHeight: 1.2,
               }}
             >
-              Bridge BTC
+              Bridge Smarter. Receive More.
             </h1>
             <p style={{ margin: "5px 0 0", fontSize: 13, color: "#5a6d9a", fontWeight: 400, lineHeight: 1.5 }}>
-              Transfer wrapped BTC across Ethereum L2s — no custodians, verified on-chain.
+              We optimize the route for better execution
             </p>
           </div>
           <WalletButton
@@ -555,55 +606,6 @@ export default function HomePage() {
           onSwapChains={handleSwapChains}
           onSubmit={wallet.address ? handleSubmit : handleConnect}
         />
-
-        {/* Trust badges */}
-        <div
-          style={{
-            marginTop: 18,
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            gap: 6,
-            flexWrap: "wrap",
-          }}
-        >
-          {[
-            { label: "0% bridge fee" },
-            { label: "~2 min settlement" },
-            { label: "On-chain proof" },
-            { label: "Non-custodial" },
-          ].map(({ label }) => (
-            <span
-              key={label}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                padding: "4px 10px",
-                borderRadius: 6,
-                border: "1px solid #1a2240",
-                background: "#0d1326",
-                fontSize: 11,
-                fontWeight: 500,
-                color: "#6b7db3",
-                letterSpacing: "0.01em",
-              }}
-            >
-              <span
-                style={{
-                  width: 4,
-                  height: 4,
-                  borderRadius: "50%",
-                  background: "#2e4060",
-                  display: "inline-block",
-                  flexShrink: 0,
-                }}
-                aria-hidden="true"
-              />
-              {label}
-            </span>
-          ))}
-        </div>
 
         {/* Protocol attribution */}
         <p
