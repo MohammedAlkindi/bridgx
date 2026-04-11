@@ -40,20 +40,17 @@ export default function TransferStatus({ status, errorMessage }: TransferStatusP
 
   return (
     <section className="w-full rounded-2xl border border-[#29335a] bg-[#121937] p-6 shadow-lg">
-      <h2 className="text-base font-semibold text-[#f0f4ff]">Transfer progress</h2>
-      <p className="mt-1 text-sm text-[#6b7db3]">
-        Track each step from source submission to destination finalization.
-      </p>
+      <h2 className="text-base font-semibold text-[#f0f4ff]">Transfer Progress</h2>
 
       {/* Status banner */}
-      <div className={`mt-4 rounded-lg border px-3 py-2 text-sm font-medium ${bannerClasses}`}>
+      <div className={`mt-4 rounded-lg border px-4 py-2.5 text-sm font-semibold tracking-wide ${bannerClasses}`}>
         {isFailure
           ? `Transfer ${TRANSFER_STATUS_LABELS[status].toLowerCase()}.`
           : `Status: ${TRANSFER_STATUS_LABELS[status]}`}
       </div>
 
       {/* Progress steps */}
-      <ol className="mt-4 space-y-2">
+      <ol className="mt-4 space-y-1.5">
         {PROGRESS_STEPS.map((step, index) => {
           const stepState = getStepState(step, status);
           const isCurrent = stepState === "current";
