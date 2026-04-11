@@ -34,6 +34,44 @@ export async function connectMetaMask(): Promise<`0x${string}`> {
   return address as `0x${string}`;
 }
 
+export async function requestWalletPermissions(): Promise<void> {
+  if (typeof window === "undefined" || !("ethereum" in window)) {
+    return;
+  }
+
+  const ethereum = window.ethereum as {
+    request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  };
+
+  try {
+    await ethereum.request({
+      method: "wallet_requestPermissions",
+      params: [{ eth_accounts: {} }],
+    });
+  } catch {
+    // Ignore if the wallet does not support permissions prompt.
+  }
+}
+
+export async function disconnectMetaMask(): Promise<void> {
+  if (typeof window === "undefined" || !("ethereum" in window)) {
+    return;
+  }
+
+  const ethereum = window.ethereum as {
+    request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  };
+
+  try {
+    await ethereum.request({
+      method: "wallet_revokePermissions",
+      params: [{ eth_accounts: {} }],
+    });
+  } catch {
+    // Ignore if the wallet does not support permissions revoke.
+  }
+}
+
 export function shortenWalletAddress(address: string, start = 6, end = 4): string {
   const trimmedAddress = address.trim();
 

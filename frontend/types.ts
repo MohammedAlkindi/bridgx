@@ -1,4 +1,4 @@
-export const SUPPORTED_CHAINS = ["base", "arbitrum", "optimism"] as const;
+export const SUPPORTED_CHAINS = ["avalanche", "base", "arbitrum"] as const;
 
 export type SupportedChain = (typeof SUPPORTED_CHAINS)[number];
 
@@ -41,6 +41,16 @@ export interface TokenInfo {
   decimals: number;
   chain_id: number;
   chain_name?: string | null;
+}
+
+export interface NetworkInfo {
+  name: SupportedChain;
+  chain_id: number;
+  label: string;
+}
+
+export interface TokenBalanceResponse {
+  balance: string;
 }
 
 export interface BridgeInitiateRequest {

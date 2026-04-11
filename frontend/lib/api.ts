@@ -1,8 +1,10 @@
 import type {
   BridgeInitiateRequest,
   BridgeInitiateResponse,
+  NetworkInfo,
   QuoteRequest,
   QuoteResponse,
+  TokenBalanceResponse,
   TokenInfo,
   TransferReceiptResponse,
   TransferStatusResponse,
@@ -14,6 +16,22 @@ const MOCK_API_ENABLED =
   process.env.NODE_ENV !== "production";
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
+
+type TokenPayload = {
+  address: string;
+  decimals: number;
+  chain_id: number;
+};
+
+type OutputAmountRequest = {
+  amount_in: string;
+  token_in: TokenPayload;
+  token_med_in: TokenPayload;
+  token_med_out: TokenPayload;
+  token_out: TokenPayload;
+  wallet_address?: string;
+  slippage_perc?: number;
+};
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -160,4 +178,62 @@ export async function getTokens(): Promise<TokenInfo[]> {
   }
 
   return requestJson<TokenInfo[]>("/tokens");
+}
+
+export async function getNetworks(): Promise<NetworkInfo[]> {
+  if (MOCK_API_ENABLED) {
+    try {
+      return await requestJson<NetworkInfo[]>("/networks");
+    } catch {
+      return [];
+    }
+  }
+
+  return requestJson<NetworkInfo[]>("/networks");
+}
+
+export async function getTokenBalance(
+  tokenAddress: string,
+  walletAddress: string,
+  chainId: number,
+): Promise<TokenBalanceResponse> {
+  return requestJson<TokenBalanceResponse>(
+    `/token-balance?token_address=${encodeURIComponent(tokenAddress)}&wallet_address=${encodeURIComponent(
+      walletAddress,
+    )}&chain_id=${chainId}`,
+  );
+}
+
+export async function getTokenPrice(tokenAddress: string, chainId: number): Promise<number> {
+  if (MOCK_API_ENABLED) {
+    try {
+      return await requestJson<number>("/token-price", {
+        method: "POST",
+        body: JSON.stringify({ token_address: tokenAddress, chain_id: chainId }),
+      });
+    } catch {
+      return Number.NaN;
+    }
+  }
+  return requestJson<number>("/token-price", {
+    method: "POST",
+    body: JSON.stringify({ token_address: tokenAddress, chain_id: chainId }),
+  });
+}
+
+export async function getOutputAmount(request: OutputAmountRequest): Promise<number> {
+  if (MOCK_API_ENABLED) {
+    try {
+      return await requestJson<number>("/output-amount", {
+        method: "POST",
+        body: JSON.stringify(request),
+      });
+    } catch {
+      return Number(request.amount_in);
+    }
+  }
+  return requestJson<number>("/output-amount", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
 }

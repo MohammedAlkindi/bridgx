@@ -91,11 +91,11 @@ class Token:
         contract = self.w3.eth.contract(address=self.address, abi=abi)
         return contract.functions.symbol().call()
 
-usdc_avalanche = Token(
-    address="0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+weth_avalanche = Token(
+    address="0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB",
     chain_id=AVALANCHE_CHAIN_ID,
-    symbol="USDC",
-    decimals=6,
+    symbol="WETH",
+    decimals=18,
 )
 btcb_avalanche = Token(
     address="0x152b9d0FdC40C096757F570A51E494bd4b943E50",
@@ -110,11 +110,11 @@ wbtce_avalanche = Token(
     decimals=8,
 )
 
-usdc_base = Token(
-    address="0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+weth_base = Token(
+    address="0x4200000000000000000000000000000000000006",
     chain_id=BASE_CHAIN_ID,
-    symbol="USDC",
-    decimals=6,
+    symbol="WETH",
+    decimals=18,
 )
 cbbtc_base = Token(
     address="0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
@@ -135,11 +135,11 @@ tbtc_base = Token(
     decimals=18,
 )
 
-usdc_arbitrum = Token(
-    address="0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+weth_arbitrum = Token(
+    address="0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
     chain_id=ARBITRUM_CHAIN_ID,
-    symbol="USDC",
-    decimals=6,
+    symbol="WETH",
+    decimals=18,
 )
 wbtc_arbitrum = Token(
     address="0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
@@ -149,6 +149,7 @@ wbtc_arbitrum = Token(
 )
 
 TOKENS = [
-    usdc_avalanche, btcb_avalanche, wbtce_avalanche, usdc_base, cbbtc_base, wbtc_base, tbtc_base, usdc_arbitrum, 
-    wbtc_arbitrum,
+    weth_avalanche, btcb_avalanche, wbtce_avalanche,
+    weth_base, cbbtc_base, wbtc_base, tbtc_base,
+    weth_arbitrum, wbtc_arbitrum,
 ]
