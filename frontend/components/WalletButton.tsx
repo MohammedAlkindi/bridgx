@@ -35,10 +35,10 @@ export default function WalletButton({
       aria-label={isConnected ? "Disconnect wallet" : "Connect wallet"}
       className={[
         "inline-flex min-w-[9rem] items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium",
-        "transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F7931A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#090e1f]",
+        "transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F7931A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#090e1f]",
         isConnected
-          ? "border-[#4c5f9d] bg-[#1a2d5a] text-[#e2e8ff] hover:bg-[#243870]"
-          : "border-[#F7931A] bg-[#F7931A] text-white hover:bg-[#e28512]",
+          ? "border-[#29335a] bg-[#0f1632] text-[#c8d8f0] hover:bg-[#1a2a50]"
+          : "border-[#F7931A] bg-[#F7931A] text-white hover:bg-[#e28512] active:bg-[#cc7810]",
         disabled || isConnecting ? "cursor-not-allowed opacity-60" : "cursor-pointer",
         className,
       ]

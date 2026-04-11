@@ -61,9 +61,9 @@ export default function BridgeWidget({
   const isSubmitDisabled = loading || !canSubmit;
 
   return (
-    <section className="w-full rounded-2xl border border-[#29335a] bg-[#121937] p-6 shadow-lg">
+    <section className="w-full rounded-2xl border border-[#29335a] bg-[#121937] p-6 shadow-xl">
       {/* Chain selectors */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-[1fr_28px_1fr] items-end gap-2">
         <div>
           <label htmlFor="source-chain" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#6b7db3]">
             From
@@ -81,6 +81,10 @@ export default function BridgeWidget({
           {fieldErrors?.sourceChain && (
             <p className="mt-1 text-xs text-red-400">{fieldErrors.sourceChain}</p>
           )}
+        </div>
+
+        <div className="flex justify-center pb-[11px] text-[#4a5a8a]" aria-hidden="true">
+          →
         </div>
 
         <div>
@@ -104,7 +108,7 @@ export default function BridgeWidget({
       </div>
 
       {/* Amount input */}
-      <div className="mt-4">
+      <div className="mt-5">
         <label htmlFor="amount-sats" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#6b7db3]">
           Amount (satoshis)
         </label>
@@ -128,7 +132,7 @@ export default function BridgeWidget({
       </div>
 
       {/* Recipient address */}
-      <div className="mt-4">
+      <div className="mt-5">
         <label htmlFor="recipient-address" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#6b7db3]">
           Recipient address
         </label>
@@ -146,8 +150,8 @@ export default function BridgeWidget({
       </div>
 
       {/* Quote panel */}
-      <div className="mt-4 rounded-xl border border-[#1e2d5a] bg-[#0d1326] p-4">
-        <p className="text-xs font-semibold uppercase tracking-wider text-[#6b7db3]">Quote</p>
+      <div className="mt-5 rounded-xl border border-[#1e2d5a] bg-[#0d1326] p-4">
+        <p className="text-xs font-semibold uppercase tracking-widest text-[#4a5a8a]">Quote</p>
         {quote ? (
           <div className="mt-2 space-y-1.5 text-sm">
             <div className="flex justify-between">
@@ -170,13 +174,15 @@ export default function BridgeWidget({
             )}
           </div>
         ) : (
-          <p className="mt-2 text-sm text-[#4a5a8a]">Fill in all fields to get a live quote.</p>
+          <p className="mt-2 text-sm text-[#4a5a8a]">Complete the form to see a live quote.</p>
         )}
       </div>
 
       {/* Error / info message */}
       {errorMessage && (
-        <p className="mt-3 text-sm text-[#9eb3ff]">{errorMessage}</p>
+        <div className="mt-4 rounded-lg border border-[#1e2d5a] bg-[#0d1326] px-3 py-2.5 text-sm text-[#7a90b8]">
+          {errorMessage}
+        </div>
       )}
 
       {/* Submit button */}
@@ -185,7 +191,7 @@ export default function BridgeWidget({
         onClick={onSubmit}
         disabled={isSubmitDisabled}
         aria-busy={loading}
-        className="mt-5 w-full rounded-xl bg-[#F7931A] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#e28512] disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-5 w-full rounded-xl bg-[#F7931A] px-4 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-[#e28512] active:bg-[#cc7810] disabled:cursor-not-allowed disabled:opacity-40"
       >
         {loading ? (
           <span className="inline-flex items-center gap-2">
