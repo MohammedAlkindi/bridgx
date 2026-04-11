@@ -7,6 +7,19 @@ export const metadata: Metadata = {
   description: "Seamless BTC cross-chain transfers — fast, minimal, and transparent.",
 };
 
+const NAV_LINKS = [
+  { href: "/", label: "Bridge" },
+  { href: "/about", label: "About" },
+  { href: "/roadmap", label: "Roadmap" },
+] as const;
+
+const FOOTER_NAV = [
+  { href: "/about", label: "About" },
+  { href: "/roadmap", label: "Roadmap" },
+  { href: "/privacy", label: "Privacy" },
+  { href: "/terms", label: "Terms" },
+] as const;
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
@@ -28,56 +41,115 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         }}
       >
         <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+          {/* ── Header ───────────────────────────────────────────────── */}
           <header
             style={{
               borderBottom: "1px solid #1a2240",
               background: "#0d1326",
+              position: "sticky",
+              top: 0,
+              zIndex: 50,
+              backdropFilter: "blur(8px)",
             }}
           >
             <div
               style={{
                 maxWidth: 960,
                 margin: "0 auto",
-                padding: "18px 24px",
+                padding: "0 24px",
+                height: 56,
                 display: "flex",
                 alignItems: "center",
-                gap: 14,
+                justifyContent: "space-between",
               }}
             >
-              <a
-                href="/"
+              {/* Brand + Nav */}
+              <div style={{ display: "flex", alignItems: "center", gap: 28 }}>
+                <a
+                  href="/"
+                  style={{
+                    color: "#f0f4ff",
+                    textDecoration: "none",
+                    fontWeight: 700,
+                    fontSize: 17,
+                    letterSpacing: "-0.4px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 9,
+                  }}
+                >
+                  {/* BTC icon mark */}
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 28,
+                      height: 28,
+                      borderRadius: 8,
+                      background: "#F7931A",
+                      fontSize: 14,
+                      fontWeight: 800,
+                      color: "white",
+                      flexShrink: 0,
+                      lineHeight: 1,
+                    }}
+                  >
+                    ₿
+                  </span>
+                  BridgX
+                </a>
+
+                <nav aria-label="Primary navigation" style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                  {NAV_LINKS.map(({ href, label }) => (
+                    <a
+                      key={href}
+                      href={href}
+                      style={{
+                        padding: "5px 11px",
+                        borderRadius: 7,
+                        fontSize: 13.5,
+                        fontWeight: 500,
+                        color: "#7a90b8",
+                        textDecoration: "none",
+                        transition: "color 0.15s",
+                      }}
+                    >
+                      {label}
+                    </a>
+                  ))}
+                </nav>
+              </div>
+
+              {/* Network status */}
+              <div
                 style={{
-                  color: "#f0f4ff",
-                  textDecoration: "none",
-                  fontWeight: 700,
-                  fontSize: 20,
-                  letterSpacing: "-0.5px",
-                }}
-              >
-                BridgX
-              </a>
-              <span
-                style={{
-                  color: "#263360",
-                  fontSize: 15,
-                  userSelect: "none",
-                  padding: "0 4px",
-                }}
-              >
-                |
-              </span>
-              <span
-                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 12,
+                  fontWeight: 500,
                   color: "#5a6d9a",
-                  fontSize: 13,
-                  fontWeight: 400,
+                  userSelect: "none",
                 }}
               >
-                BTC cross-chain bridge
-              </span>
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: "#10b981",
+                    display: "inline-block",
+                    flexShrink: 0,
+                  }}
+                  aria-hidden="true"
+                />
+                Mainnet
+              </div>
             </div>
           </header>
 
+          {/* ── Main content ─────────────────────────────────────────── */}
           <main
             style={{
               flex: 1,
@@ -90,17 +162,49 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             {children}
           </main>
 
+          {/* ── Footer ───────────────────────────────────────────────── */}
           <footer
             style={{
               borderTop: "1px solid #1a2240",
               background: "#0d1326",
-              padding: "14px 24px",
-              textAlign: "center",
-              fontSize: 12,
-              color: "#4a5a8a",
             }}
           >
-            BridgX &mdash; Powered by Odos &amp; Circle CCTP
+            <div
+              style={{
+                maxWidth: 960,
+                margin: "0 auto",
+                padding: "18px 24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 12,
+              }}
+            >
+              <span style={{ fontSize: 12, color: "#3d5070" }}>
+                © 2025 BridgX &mdash; Powered by{" "}
+                <span style={{ color: "#4a6080" }}>Odos</span>
+                {" "}&amp;{" "}
+                <span style={{ color: "#4a6080" }}>Circle CCTP</span>
+              </span>
+
+              <nav aria-label="Footer navigation" style={{ display: "flex", alignItems: "center", gap: 18 }}>
+                {FOOTER_NAV.map(({ href, label }) => (
+                  <a
+                    key={href}
+                    href={href}
+                    style={{
+                      fontSize: 12,
+                      color: "#3d5070",
+                      textDecoration: "none",
+                      transition: "color 0.15s",
+                    }}
+                  >
+                    {label}
+                  </a>
+                ))}
+              </nav>
+            </div>
           </footer>
         </div>
       </body>
