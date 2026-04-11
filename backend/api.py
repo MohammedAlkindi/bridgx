@@ -1,12 +1,18 @@
+import time
 from decimal import Decimal
 from typing import Any, Dict, Optional
 
+import requests as _requests
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from .libs import provider
 
 app = FastAPI(title="Provider API")
+
+# BTC/USD price cache: (price_usd, fetched_at_epoch)
+_btc_price_cache: Optional[tuple] = None
+_BTC_PRICE_CACHE_TTL_S = 60  # refresh at most once per minute
 
 AVALANCHE_CHAIN_ID = 43114
 
@@ -141,3 +147,27 @@ def output_amount(request: OutputAmountRequest) -> float:
     if not out_amounts_2:
         raise HTTPException(status_code=502, detail="Provider quote 2 missing outAmounts")
     return float(out_amounts_2[0]) / 10**request.token_out.decimals
+
+
+@app.get("/btc-price")
+def btc_price() -> Dict[str, float]:
+    """Return the current BTC/USD price, cached for up to 60 seconds."""
+    global _btc_price_cache
+    now = time.time()
+    if _btc_price_cache is not None and now - _btc_price_cache[1] < _BTC_PRICE_CACHE_TTL_S:
+        return {"usd": _btc_price_cache[0]}
+    try:
+        response = _requests.get(
+            "https://api.coingecko.com/api/v3/simple/price",
+            params={"ids": "bitcoin", "vs_currencies": "usd"},
+            timeout=5,
+        )
+        if response.status_code == 200:
+            price = float(response.json()["bitcoin"]["usd"])
+            _btc_price_cache = (price, now)
+            return {"usd": price}
+    except Exception:
+        pass
+    if _btc_price_cache is not None:
+        return {"usd": _btc_price_cache[0]}
+    raise HTTPException(status_code=502, detail="Failed to fetch BTC price")
