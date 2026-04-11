@@ -1,9 +1,15 @@
 import type {
   BridgeInitiateRequest,
   BridgeInitiateResponse,
+  AssembleRequest,
+  AssembledTransaction,
+  AttestationRequest,
+  AttestationResponse,
   NetworkInfo,
   QuoteRequest,
   QuoteResponse,
+  ReceiptRequest,
+  ReceiptResponse,
   TokenBalanceResponse,
   TokenInfo,
   TransferReceiptResponse,
@@ -11,9 +17,8 @@ import type {
 } from "../types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-const MOCK_API_ENABLED =
-  process.env.NEXT_PUBLIC_USE_MOCK_API === "true" ||
-  process.env.NODE_ENV !== "production";
+const FORCE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
+const MOCK_API_ENABLED = FORCE_MOCK_API || process.env.NODE_ENV !== "production";
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
@@ -89,6 +94,14 @@ function buildMockReceipt(transferId: string): TransferReceiptResponse {
   };
 }
 
+function buildMockAssemble(_: AssembleRequest): AssembledTransaction {
+  return {
+    to: "0x0000000000000000000000000000000000000000",
+    data: "0x",
+    value: "0x0",
+  };
+}
+
 export async function getQuote(request: QuoteRequest): Promise<QuoteResponse> {
   if (MOCK_API_ENABLED) {
     try {
@@ -104,6 +117,45 @@ export async function getQuote(request: QuoteRequest): Promise<QuoteResponse> {
   return requestJson<QuoteResponse>("/quote", {
     method: "POST",
     body: JSON.stringify(request),
+  });
+}
+
+export async function assembleTx(request: AssembleRequest): Promise<AssembledTransaction> {
+  if (FORCE_MOCK_API) {
+    return buildMockAssemble(request);
+  }
+
+  return requestJson<AssembledTransaction>("/assemble", {
+    method: "POST",
+    body: JSON.stringify({
+      quote_id: request.quoteId,
+      wallet_address: request.walletAddress,
+    }),
+  });
+}
+
+export async function requestAttestation(
+  request: AttestationRequest,
+): Promise<AttestationResponse> {
+  return requestJson<AttestationResponse>("/attestation", {
+    method: "POST",
+    body: JSON.stringify({
+      source_tx_hash: request.sourceTxHash,
+      source_chain: request.sourceChain,
+      destination_chain: request.destinationChain,
+      poll_attempts: request.pollAttempts,
+      poll_interval_s: request.pollIntervalS,
+    }),
+  });
+}
+
+export async function getReceipt(request: ReceiptRequest): Promise<ReceiptResponse> {
+  return requestJson<ReceiptResponse>("/receipt", {
+    method: "POST",
+    body: JSON.stringify({
+      tx_hash: request.txHash,
+      chain: request.chain,
+    }),
   });
 }
 

@@ -34,6 +34,47 @@ export interface QuoteResponse {
   routeExpiresAt: string;
 }
 
+export interface AssembleRequest {
+  quoteId: string;
+  walletAddress: string;
+}
+
+export interface AssembledTransaction {
+  to: string;
+  data: string;
+  value?: string | number;
+  gas?: string | number;
+  gasPrice?: string | number;
+  maxFeePerGas?: string | number;
+  maxPriorityFeePerGas?: string | number;
+  chainId?: number;
+}
+
+export interface AttestationRequest {
+  sourceTxHash: TxHash;
+  sourceChain: SupportedChain;
+  destinationChain: SupportedChain;
+  pollAttempts?: number;
+  pollIntervalS?: number;
+}
+
+export interface AttestationResponse {
+  status: "pending" | "complete";
+  messageHash?: TxHash;
+  destinationTxHash?: TxHash;
+}
+
+export interface ReceiptRequest {
+  txHash: TxHash;
+  chain: SupportedChain;
+}
+
+export interface ReceiptResponse {
+  status: "pending" | "confirmed" | "failed";
+  txHash: TxHash;
+  receipt?: Record<string, unknown>;
+}
+
 export interface TokenInfo {
   address: string;
   symbol?: string | null;

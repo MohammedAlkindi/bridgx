@@ -1,16 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import BridgeWidget from "../components/BridgeWidget";
 import WalletButton from "../components/WalletButton";
 import {
+  assembleTx,
   getNetworks,
   getQuote,
+  getReceipt,
   getTokenBalance,
   getTokenPrice,
   getTokens,
-  initiateBridge,
+  requestAttestation,
 } from "../lib/api";
 import {
   connectMetaMask,
@@ -21,9 +22,11 @@ import {
 } from "../lib/wallet";
 import {
   SUPPORTED_CHAINS,
+  type AssembledTransaction,
   type NetworkInfo,
   type QuoteResponse,
   type SupportedChain,
+  type TxHash,
   type TokenInfo,
 } from "../types";
 
@@ -46,6 +49,18 @@ function buildBalanceOfCall(address: string): string {
   return `0x70a08231${clean.padStart(64, "0")}`;
 }
 
+function buildAllowanceCall(owner: string, spender: string): string {
+  const ownerClean = owner.toLowerCase().replace(/^0x/, "").padStart(64, "0");
+  const spenderClean = spender.toLowerCase().replace(/^0x/, "").padStart(64, "0");
+  return `0xdd62ed3e${ownerClean}${spenderClean}`;
+}
+
+function buildApproveCall(spender: string, amount: bigint): string {
+  const spenderClean = spender.toLowerCase().replace(/^0x/, "").padStart(64, "0");
+  const amountHex = amount.toString(16).padStart(64, "0");
+  return `0x095ea7b3${spenderClean}${amountHex}`;
+}
+
 function parseScaledAmount(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
@@ -64,6 +79,54 @@ function parseAmountToBaseUnits(amount: string, decimals: number): bigint | null
   const padded = decimals > 0 ? (frac + "0".repeat(decimals)).slice(0, decimals) : "";
   const base = BigInt(whole) * 10n ** BigInt(decimals) + (padded ? BigInt(padded) : 0n);
   return base;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const MAX_UINT256 = (1n << 256n) - 1n;
+
+async function waitForReceipt(
+  ethereum: EthereumProvider,
+  txHash: string,
+  attempts = 30,
+  intervalMs = 3000,
+): Promise<boolean> {
+  for (let i = 0; i < attempts; i += 1) {
+    const receipt = (await ethereum.request({
+      method: "eth_getTransactionReceipt",
+      params: [txHash],
+    })) as { status?: string } | null;
+    if (receipt) {
+      return receipt.status === undefined || receipt.status === "0x1";
+    }
+    await sleep(intervalMs);
+  }
+  return false;
+}
+
+function toHex(value: string | number | bigint): string {
+  if (typeof value === "string") {
+    if (value.startsWith("0x")) return value;
+    return `0x${BigInt(value).toString(16)}`;
+  }
+  return `0x${BigInt(value).toString(16)}`;
+}
+
+function normalizeTransaction(tx: AssembledTransaction, from: string) {
+  const normalized: Record<string, string> = {
+    from,
+    to: tx.to,
+    data: tx.data,
+  };
+  if (tx.value !== undefined) normalized.value = toHex(tx.value);
+  if (tx.gas !== undefined) normalized.gas = toHex(tx.gas);
+  if (tx.gasPrice !== undefined) normalized.gasPrice = toHex(tx.gasPrice);
+  if (tx.maxFeePerGas !== undefined) normalized.maxFeePerGas = toHex(tx.maxFeePerGas);
+  if (tx.maxPriorityFeePerGas !== undefined) {
+    normalized.maxPriorityFeePerGas = toHex(tx.maxPriorityFeePerGas);
+  }
+  if (tx.chainId !== undefined) normalized.chainId = toHex(tx.chainId);
+  return normalized;
 }
 
 
@@ -101,6 +164,14 @@ function tokenLabel(token: TokenInfo): string {
 
 const BTC_TOKEN_SYMBOLS = new Set(["BTCB", "WBTC", "WBTC.E", "CBBTC", "TBTC"]);
 const WETH_TOKEN_SYMBOLS = new Set(["WETH"]);
+const EXPLORER_TX_URLS: Record<SupportedChain, string> = {
+  avalanche: "https://snowtrace.io/tx/",
+  base: "https://basescan.org/tx/",
+  arbitrum: "https://arbiscan.io/tx/",
+};
+const SOURCE_EXECUTOR_ADDRESSES: Partial<Record<SupportedChain, string>> = {
+  avalanche: "0xeC20cbb6C99e4b8b78cbd81b27Ce0B7aaD222A2d",
+};
 
 function tokenFamily(token?: TokenInfo | null): "btc" | "weth" | null {
   if (!token) return null;
@@ -144,7 +215,6 @@ function isFormComplete(
 }
 
 export default function HomePage() {
-  const router = useRouter();
 
   const [wallet, setWallet] = useState<WalletState>({ status: "disconnected" });
   const [sourceChain, setSourceChain] = useState<SupportedChain>("avalanche");
@@ -163,6 +233,10 @@ export default function HomePage() {
   const [walletBalanceTokens, setWalletBalanceTokens] = useState<string | undefined>();
   const [walletBalanceRaw, setWalletBalanceRaw] = useState<bigint | undefined>();
   const [shouldPromptConnect, setShouldPromptConnect] = useState(false);
+  const [bridgeStatus, setBridgeStatus] = useState<string | undefined>();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [sourceTxHash, setSourceTxHash] = useState<TxHash | undefined>();
+  const [destinationTxHash, setDestinationTxHash] = useState<TxHash | undefined>();
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const walletAddressRef = useRef<string | undefined>();
@@ -395,7 +469,9 @@ export default function HomePage() {
     amountBaseUnits !== null &&
     walletBalanceRaw !== undefined &&
     amountBaseUnits > walletBalanceRaw;
-  const canSubmit = isWalletConnected ? quoteReady && !!quote && !insufficientFunds : true;
+  const canSubmit = isWalletConnected
+    ? quoteReady && !!quote && !insufficientFunds && !isSubmitting
+    : true;
   const ctaLabel = !isWalletConnected
     ? "Connect wallet"
     : insufficientFunds
@@ -506,21 +582,132 @@ export default function HomePage() {
 
   const handleSubmit = useCallback(async () => {
     if (!wallet.address) return;
-    if (!quoteReady || !quote || insufficientFunds) return;
+    if (!quoteReady || !quote || insufficientFunds || isSubmitting) return;
 
-    setLoading(true);
+    const ethereum = getEthereumProvider();
+    if (!ethereum) {
+      setErrorMessage("MetaMask is not available.");
+      return;
+    }
+
+    const sourceExecutor = SOURCE_EXECUTOR_ADDRESSES[sourceChain];
+    if (!sourceExecutor) {
+      setErrorMessage("SourceExecutor is not configured for this network.");
+      return;
+    }
+    if (!sourceTokenInfo || amountBaseUnits === null) {
+      setErrorMessage("Token info is not available.");
+      return;
+    }
+
+    setIsSubmitting(true);
     setErrorMessage("");
+    setSourceTxHash(undefined);
+    setDestinationTxHash(undefined);
+    setBridgeStatus("Preparing transaction...");
     try {
-      const response = await initiateBridge({
+      const allowanceHex = (await ethereum.request({
+        method: "eth_call",
+        params: [
+          {
+            to: sourceTokenInfo.address,
+            data: buildAllowanceCall(wallet.address, sourceExecutor),
+          },
+          "latest",
+        ],
+      })) as string;
+      const allowance = BigInt(allowanceHex);
+      if (allowance < amountBaseUnits) {
+        setBridgeStatus("Approving token...");
+        const approveTxHash = (await ethereum.request({
+          method: "eth_sendTransaction",
+          params: [
+            {
+              from: wallet.address,
+              to: sourceTokenInfo.address,
+              data: buildApproveCall(sourceExecutor, MAX_UINT256),
+            },
+          ],
+        })) as string;
+        const approveOk = await waitForReceipt(ethereum, approveTxHash);
+        if (!approveOk) {
+          setBridgeStatus("Approve failed.");
+          return;
+        }
+      }
+
+      const assembled = await assembleTx({
         quoteId: quote.quoteId,
         walletAddress: wallet.address,
       });
-      router.push(`/bridge/${response.transferId}`);
+      const txParams = normalizeTransaction(assembled, wallet.address);
+      const txHash = (await ethereum.request({
+        method: "eth_sendTransaction",
+        params: [txParams],
+      })) as string;
+      setSourceTxHash(txHash as TxHash);
+      setBridgeStatus(`Source tx submitted: ${txHash}`);
+
+      let attestation;
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        attestation = await requestAttestation({
+          sourceTxHash: txHash as TxHash,
+          sourceChain,
+          destinationChain,
+          pollAttempts: 1,
+          pollIntervalS: 5,
+        });
+        if (attestation.status === "complete" && attestation.destinationTxHash) {
+          break;
+        }
+        setBridgeStatus("Waiting for attestation...");
+        await sleep(5000);
+      }
+
+      if (!attestation || attestation.status !== "complete" || !attestation.destinationTxHash) {
+        setBridgeStatus("Attestation pending. Check again shortly.");
+        return;
+      }
+
+      const destinationTxHash = attestation.destinationTxHash as TxHash;
+      setDestinationTxHash(destinationTxHash);
+      setBridgeStatus(`Destination tx submitted: ${destinationTxHash}`);
+
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const receipt = await getReceipt({
+          txHash: destinationTxHash,
+          chain: destinationChain,
+        });
+        if (receipt.status === "pending") {
+          await sleep(5000);
+          continue;
+        }
+        if (receipt.status === "confirmed") {
+          setBridgeStatus(`Transfer complete. Destination tx: ${destinationTxHash}`);
+        } else {
+          setBridgeStatus("Transfer failed.");
+        }
+        return;
+      }
+
+      setBridgeStatus(`Destination tx pending: ${destinationTxHash}`);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : "Bridge initiation failed.");
-      setLoading(false);
+      setBridgeStatus(undefined);
+    } finally {
+      setIsSubmitting(false);
     }
-  }, [insufficientFunds, quoteReady, quote, router, wallet.address]);
+  }, [
+    amountBaseUnits,
+    destinationChain,
+    insufficientFunds,
+    isSubmitting,
+    quote,
+    quoteReady,
+    sourceChain,
+    sourceTokenInfo,
+    wallet.address,
+  ]);
 
   return (
     <section>
@@ -575,7 +762,7 @@ export default function HomePage() {
           loading={loading}
           canSubmit={canSubmit}
           fieldErrors={hasErrors ? fieldErrors : undefined}
-          infoMessage={undefined}
+          infoMessage={bridgeStatus}
           errorMessage={wallet.address ? errorMessage || undefined : undefined}
           walletBalanceTokens={wallet.status === "connected" ? walletBalanceTokens : undefined}
           tokenUsdPrice={tokenUsdPrice}
@@ -606,6 +793,47 @@ export default function HomePage() {
           onSwapChains={handleSwapChains}
           onSubmit={wallet.address ? handleSubmit : handleConnect}
         />
+
+        {(sourceTxHash || destinationTxHash) && (
+          <div
+            style={{
+              marginTop: 12,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              textAlign: "center",
+              fontSize: 12,
+              color: "#5a6d9a",
+            }}
+          >
+            {sourceTxHash && (
+              <div>
+                Source tx:{" "}
+                <a
+                  href={`${EXPLORER_TX_URLS[sourceChain]}${sourceTxHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "#4a6080" }}
+                >
+                  {sourceTxHash}
+                </a>
+              </div>
+            )}
+            {destinationTxHash && (
+              <div>
+                Destination tx:{" "}
+                <a
+                  href={`${EXPLORER_TX_URLS[destinationChain]}${destinationTxHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "#4a6080" }}
+                >
+                  {destinationTxHash}
+                </a>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Protocol attribution */}
         <p
