@@ -33,80 +33,102 @@ export default function TransferStatus({ status, errorMessage }: TransferStatusP
   const isFailure = TERMINAL_FAILURE_STATES.includes(status);
 
   const bannerClasses = isSuccess
-    ? "border-emerald-700 bg-emerald-900/30 text-emerald-400"
+    ? "border-emerald-800/60 bg-emerald-950/40 text-emerald-400"
     : isFailure
-      ? "border-red-700 bg-red-900/30 text-red-400"
-      : "border-[#1e2d5a] bg-[#0d1326] text-[#9eb3ff]";
+      ? "border-red-800/60 bg-red-950/40 text-red-400"
+      : "border-[#1a2240] bg-[#090e1f] text-[#7a90b8]";
 
   return (
-    <section className="w-full rounded-2xl border border-[#29335a] bg-[#121937] p-6 shadow-lg">
-      <h2 className="text-base font-semibold text-[#f0f4ff]">Transfer Progress</h2>
+    <section className="w-full rounded-2xl border border-[#1e2a4a] bg-[#0f1630] shadow-lg" style={{ overflow: "hidden" }}>
+      <div className="px-5 pt-5 pb-4">
+        <h2 className="text-[13px] font-semibold uppercase tracking-widest text-[#4a5a8a]">
+          Transfer Progress
+        </h2>
 
-      {/* Status banner */}
-      <div className={`mt-4 rounded-lg border px-4 py-2.5 text-sm font-semibold tracking-wide ${bannerClasses}`}>
-        {isFailure
-          ? `Transfer ${TRANSFER_STATUS_LABELS[status].toLowerCase()}.`
-          : `Status: ${TRANSFER_STATUS_LABELS[status]}`}
+        {/* Status banner */}
+        <div className={`mt-3 rounded-lg border px-4 py-2.5 text-sm font-medium ${bannerClasses}`}>
+          {isSuccess
+            ? "Transfer complete — funds delivered."
+            : isFailure
+              ? `Transfer ${TRANSFER_STATUS_LABELS[status].toLowerCase()}.`
+              : `${TRANSFER_STATUS_LABELS[status]}…`}
+        </div>
       </div>
 
+      {/* Divider */}
+      <div className="border-t border-[#0d1428]" />
+
       {/* Progress steps */}
-      <ol className="mt-4 space-y-1.5">
-        {PROGRESS_STEPS.map((step, index) => {
-          const stepState = getStepState(step, status);
-          const isCurrent = stepState === "current";
-          const isDone = stepState === "done";
+      <div className="px-5 py-4">
+        <ol className="space-y-1">
+          {PROGRESS_STEPS.map((step, index) => {
+            const stepState = getStepState(step, status);
+            const isCurrent = stepState === "current";
+            const isDone = stepState === "done";
 
-          return (
-            <li
-              key={step}
-              className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
-                isCurrent
-                  ? "border-[#F7931A]/40 bg-[#F7931A]/10"
-                  : isDone
-                    ? "border-emerald-800 bg-emerald-900/20"
-                    : "border-[#1e2d5a] bg-[#0d1326]"
-              }`}
-            >
-              <span
-                className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
-                  isDone
-                    ? "bg-emerald-600 text-white"
-                    : isCurrent
-                      ? "bg-[#F7931A] text-white"
-                      : "bg-[#1a2a50] text-[#6b7db3]"
+            return (
+              <li
+                key={step}
+                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 ${
+                  isCurrent
+                    ? "border border-[#F7931A]/25 bg-[#F7931A]/8"
+                    : isDone
+                      ? "border border-emerald-900/40 bg-emerald-950/20"
+                      : "border border-[#0d1428] bg-transparent"
                 }`}
-                aria-hidden="true"
+                style={isCurrent ? { background: "rgba(247,147,26,0.05)" } : undefined}
               >
-                {isDone ? "✓" : index + 1}
-              </span>
+                {/* Step indicator */}
+                <span
+                  className={`inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
+                    isDone
+                      ? "bg-emerald-700/80 text-white"
+                      : isCurrent
+                        ? "bg-[#F7931A] text-white"
+                        : "bg-[#0d1428] text-[#3d5070]"
+                  }`}
+                  aria-hidden="true"
+                >
+                  {isDone ? "✓" : index + 1}
+                </span>
 
-              <div className="min-w-0 flex-1">
-                <p className={`text-sm font-medium ${
-                  isDone ? "text-emerald-400" : isCurrent ? "text-[#f0f4ff]" : "text-[#6b7db3]"
-                }`}>
-                  {TRANSFER_STATUS_LABELS[step]}
-                </p>
+                <div className="min-w-0 flex-1">
+                  <p className={`text-sm font-medium leading-tight ${
+                    isDone
+                      ? "text-emerald-500"
+                      : isCurrent
+                        ? "text-[#e2e8ff]"
+                        : "text-[#3d5070]"
+                  }`}>
+                    {TRANSFER_STATUS_LABELS[step]}
+                  </p>
+                  {isCurrent && (
+                    <p className="mt-0.5 text-[11px] text-[#F7931A]/70">In progress</p>
+                  )}
+                </div>
+
                 {isCurrent && (
-                  <p className="mt-0.5 text-xs text-[#F7931A]">In progress…</p>
+                  <svg className="h-3.5 w-3.5 shrink-0 animate-spin text-[#F7931A]" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
                 )}
-              </div>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
 
-              {isCurrent && (
-                <svg className="h-4 w-4 shrink-0 animate-spin text-[#F7931A]" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                </svg>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-
-      {/* Failure message */}
+      {/* Failure detail */}
       {isFailure && (
-        <p className="mt-4 rounded-lg border border-red-800 bg-red-900/20 px-3 py-2 text-sm text-red-400">
-          {errorMessage ?? "This transfer did not complete. Please start a new transfer."}
-        </p>
+        <>
+          <div className="border-t border-[#0d1428]" />
+          <div className="px-5 py-4">
+            <p className="rounded-lg border border-red-900/40 bg-red-950/20 px-3 py-2.5 text-sm text-red-400 leading-snug">
+              {errorMessage ?? "This transfer did not complete. Please start a new transfer."}
+            </p>
+          </div>
+        </>
       )}
     </section>
   );

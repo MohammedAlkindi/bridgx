@@ -32,12 +32,13 @@ export default function WalletButton({
       onClick={isConnected ? onDisconnect : onConnect}
       disabled={disabled || isConnecting}
       aria-busy={isConnecting}
-      aria-label={isConnected ? "Disconnect wallet" : "Connect wallet"}
+      aria-label={isConnected ? `Disconnect wallet (${address ?? ""})` : "Connect wallet"}
+      title={isConnected && address ? address : undefined}
       className={[
         "inline-flex min-w-[9rem] items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium",
         "transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F7931A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#090e1f]",
         isConnected
-          ? "border-[#29335a] bg-[#0f1632] text-[#c8d8f0] hover:bg-[#1a2a50]"
+          ? "border-[#1e2d5a] bg-[#090e1f] text-[#9eb3cc] hover:border-[#263360] hover:bg-[#0f1632]"
           : "border-[#F7931A] bg-[#F7931A] text-white hover:bg-[#e28512] active:bg-[#cc7810]",
         disabled || isConnecting ? "cursor-not-allowed opacity-60" : "cursor-pointer",
         className,
@@ -46,7 +47,7 @@ export default function WalletButton({
         .join(" ")}
     >
       {isConnected && (
-        <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" aria-hidden="true" />
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" aria-hidden="true" />
       )}
       {isConnecting && (
         <svg className="h-3.5 w-3.5 shrink-0 animate-spin" viewBox="0 0 24 24" fill="none">
