@@ -145,6 +145,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [tokenUsdPrice, setTokenUsdPrice] = useState<number | undefined>();
+  const [destinationTokenUsdPrice, setDestinationTokenUsdPrice] = useState<number | undefined>();
   const [walletBalanceTokens, setWalletBalanceTokens] = useState<string | undefined>();
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -252,6 +253,9 @@ export default function HomePage() {
   const destinationTokenOptions = activeFamily
     ? destinationChainTokens.filter((token) => tokenFamily(token) === activeFamily)
     : destinationChainTokens;
+  const destinationTokenInfo = destinationTokenOptions.find(
+    (token) => tokenLabel(token) === destinationToken,
+  );
 
   useEffect(() => {
     if (!sourceTokenOptions.length) {
@@ -285,6 +289,18 @@ export default function HomePage() {
       })
       .catch(() => setTokenUsdPrice(undefined));
   }, [sourceTokenInfo?.address, sourceTokenInfo?.chain_id]);
+
+  useEffect(() => {
+    if (!destinationTokenInfo) {
+      setDestinationTokenUsdPrice(undefined);
+      return;
+    }
+    getTokenPrice(destinationTokenInfo.address, destinationTokenInfo.chain_id)
+      .then((price) => {
+        setDestinationTokenUsdPrice(Number.isFinite(price) && price > 0 ? price : undefined);
+      })
+      .catch(() => setDestinationTokenUsdPrice(undefined));
+  }, [destinationTokenInfo?.address, destinationTokenInfo?.chain_id]);
 
   useEffect(() => {
     if (!wallet.address || !sourceTokenInfo) {
@@ -327,51 +343,69 @@ export default function HomePage() {
     destinationToken,
   );
 
-  // Auto-fetch quote whenever the form becomes complete and valid
-  useEffect(() => {
+  const fetchQuote = useCallback(async () => {
     if (!formComplete) {
+      setLoading(false);
       setQuote(undefined);
       return;
     }
 
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setLoading(true);
-      setErrorMessage("");
-      const scaledAmount = parseScaledAmount(amountSats);
-      if (!scaledAmount) {
-        setLoading(false);
-        setQuote(undefined);
-        return;
-      }
-      getQuote({
+    const scaledAmount = parseScaledAmount(amountSats);
+    if (!scaledAmount) {
+      setQuote(undefined);
+      return;
+    }
+
+    setLoading(true);
+    setErrorMessage("");
+    try {
+      const result = await getQuote({
         sourceChain,
         destinationChain,
         sourceToken,
         destinationToken,
         amountSats: scaledAmount,
         walletAddress: wallet.address!,
-      })
-        .then((result) => setQuote(result))
-        .catch((err: unknown) => {
-          setErrorMessage(err instanceof Error ? err.message : "Failed to fetch quote.");
-          setQuote(undefined);
-        })
-        .finally(() => setLoading(false));
+      });
+      setQuote(result);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Failed to fetch quote.");
+      setQuote(undefined);
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    amountSats,
+    destinationChain,
+    destinationToken,
+    formComplete,
+    sourceChain,
+    sourceToken,
+    wallet.address,
+  ]);
+
+  // Auto-fetch quote whenever the form becomes complete and valid
+  useEffect(() => {
+    if (!formComplete) {
+      setLoading(false);
+      setQuote(undefined);
+      return;
+    }
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      void fetchQuote();
     }, QUOTE_DEBOUNCE_MS);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [
-    sourceChain,
-    destinationChain,
-    sourceToken,
-    destinationToken,
-    amountSats,
-    wallet.address,
-    formComplete,
-  ]);
+  }, [fetchQuote, formComplete]);
+
+  const handleRefreshQuote = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    void fetchQuote();
+  }, [fetchQuote]);
 
   const handleConnect = useCallback(async () => {
     setWallet({ status: "connecting" });
@@ -477,6 +511,9 @@ export default function HomePage() {
           errorMessage={wallet.address ? errorMessage || undefined : undefined}
           walletBalanceTokens={wallet.status === "connected" ? walletBalanceTokens : undefined}
           tokenUsdPrice={tokenUsdPrice}
+          destinationTokenUsdPrice={destinationTokenUsdPrice}
+          onRefreshQuote={handleRefreshQuote}
+          canRefresh={formComplete}
           onSourceChainChange={(chain) => {
             setSourceChain(chain);
             setQuote(undefined);
