@@ -18,8 +18,8 @@ export type TxHash = `0x${string}`;
 export interface QuoteRequest {
   sourceChain: SupportedChain;
   destinationChain: SupportedChain;
-  sourceToken: "BTC";
-  destinationToken: "BTC";
+  sourceToken: string;
+  destinationToken: string;
   amountSats: string;
   walletAddress: string;
 }
@@ -32,6 +32,15 @@ export interface QuoteResponse {
   destinationAmountSats: string;
   estimatedDurationSec: number;
   routeExpiresAt: string;
+}
+
+export interface TokenInfo {
+  address: string;
+  symbol?: string | null;
+  name?: string | null;
+  decimals: number;
+  chain_id: number;
+  chain_name?: string | null;
 }
 
 export interface BridgeInitiateRequest {
