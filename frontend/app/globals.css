@@ -34,6 +34,23 @@ html {
   color: var(--nav-link-hover-color);
 }
 
+.nav-link-active {
+  color: var(--brand-accent-color);
+  background: rgba(247, 147, 26, 0.14);
+  box-shadow: 0 0 14px rgba(247, 147, 26, 0.35);
+}
+
+.nav-link-disabled {
+  color: #3d5070;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.nav-link-active:hover,
+.nav-link-disabled:hover {
+  color: inherit;
+}
+
 /* Text selection */
 ::selection {
   background-color: rgba(247, 147, 26, 0.2);

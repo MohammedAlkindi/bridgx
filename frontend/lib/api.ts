@@ -18,7 +18,7 @@ import type {
   TransferStatusResponse,
 } from "../types";
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8001";
 const FORCE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
 const MOCK_API_ENABLED = FORCE_MOCK_API || process.env.NODE_ENV !== "production";
 

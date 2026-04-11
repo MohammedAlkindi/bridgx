@@ -210,7 +210,7 @@ export default function BridgeWidget({
               className="w-full rounded-lg border border-[#1e2d5a] bg-[#090e1f] px-3 py-2.5 text-sm text-[#e2e8ff] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20"
             >
               {chainOptions.map((chain) => (
-                <option key={chain} value={chain} disabled={chain === sourceChain}>
+                <option key={chain} value={chain} disabled={chain === sourceChain || chain === "arbitrum"}>
                   {CHAIN_LABELS[chain]}
                 </option>
               ))}
@@ -307,6 +307,31 @@ export default function BridgeWidget({
             </div>
           </div>
 
+          {/* USD + Balance */}
+          <div className="mt-1.5 flex items-center justify-between text-xs">
+            {amountUsd ? (
+              <span className="text-[#5a6d9a]">≈ {amountUsd}</span>
+            ) : (
+              <span />
+            )}
+            {walletBalanceTokens !== undefined ? (
+              <span className="text-[#3d5070]">
+                Balance:{" "}
+                <span className="text-[#5a6d9a]">
+                  {walletBalanceTokens} {sourceToken || ""}
+                </span>
+                {showUsd && walletBalanceTokens && (
+                  <span className="text-[#3d5070]">
+                    {" "}
+                    ≈ {tokenToUsd(Number(walletBalanceTokens), tokenUsdPrice!)}
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span />
+            )}
+          </div>
+
           <div className="mt-1.5 flex justify-end">
             <button
               type="button"
@@ -342,31 +367,6 @@ export default function BridgeWidget({
                 />
               </svg>
             </button>
-          </div>
-
-          {/* USD + Balance */}
-          <div className="mt-1.5 flex items-center justify-between text-xs">
-            {amountUsd ? (
-              <span className="text-[#5a6d9a]">≈ {amountUsd}</span>
-            ) : (
-              <span />
-            )}
-            {walletBalanceTokens !== undefined ? (
-              <span className="text-[#3d5070]">
-                Balance:{" "}
-                <span className="text-[#5a6d9a]">
-                  {walletBalanceTokens} {sourceToken || ""}
-                </span>
-                {showUsd && walletBalanceTokens && (
-                  <span className="text-[#3d5070]">
-                    {" "}
-                    ≈ {tokenToUsd(Number(walletBalanceTokens), tokenUsdPrice!)}
-                  </span>
-                )}
-              </span>
-            ) : (
-              <span />
-            )}
           </div>
 
           {fieldErrors?.amountSats && (

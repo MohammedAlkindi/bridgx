@@ -22,21 +22,21 @@ export default function AboutPage() {
           About BridgX
         </h1>
         <p style={{ margin: 0, fontSize: 14, color: "#5a6d9a", lineHeight: 1.6 }}>
-          A non-custodial bridge for moving wrapped BTC across Ethereum L2 networks.
+          A cross-chain swap bridge built to scale across 10+ networks and 100+ tokens.
         </p>
       </div>
 
       {/* What it is */}
       <Section title="What it does">
         <p>
-          BridgX enables users to move wrapped Bitcoin (WBTC and compatible BTC-pegged assets)
-          between Ethereum Layer 2 networks — currently Base, Arbitrum, and Optimism — without
-          any centralized custodian or manual wrapping step.
+          BridgX is a generic bridge for swapping assets across multiple networks. The long-term
+          goal is 10+ chains and 100+ tokens. Right now it's a hackathon MVP focused on WETH and
+          wrapped BTC moving from Avalanche to Base (yes, we started small on purpose).
         </p>
         <p style={{ marginTop: 12 }}>
-          Transfers are fully atomic: either the complete amount arrives at the destination
-          or the transaction fails and nothing is lost. Every transfer produces an on-chain
-          proof that can be independently verified.
+          The core idea is to chain Circle CCTP (zero-fee USDC transfers) with Odos routing for the
+          best swap rates. In internal tests it beats other bridges in ~50% of cases, which is
+          pretty wild for a hackathon build.
         </p>
       </Section>
 
@@ -47,22 +47,21 @@ export default function AboutPage() {
         <ol style={{ paddingLeft: 18, margin: 0, lineHeight: 2 }}>
           <li>
             <strong style={{ color: "#c8d8f0", fontWeight: 600 }}>Quote.</strong>{" "}
-            BridgX queries live liquidity via Odos to compute the optimal swap route and
-            estimated output amount.
+            BridgX queries Odos to compute the optimal swap route and estimated output amount
+            (aka the "find me a better price" step).
           </li>
           <li>
-            <strong style={{ color: "#c8d8f0", fontWeight: 600 }}>Lock.</strong>{" "}
-            Your wallet signs a transaction that locks the BTC asset on the source chain.
+            <strong style={{ color: "#c8d8f0", fontWeight: 600 }}>Swap to USDC.</strong>{" "}
+            The source token is swapped into USDC and burned through CCTP. Magic happens.
           </li>
           <li>
             <strong style={{ color: "#c8d8f0", fontWeight: 600 }}>Attest.</strong>{" "}
-            Circle's Cross-Chain Transfer Protocol (CCTP) generates a cryptographic attestation
-            confirming the lock.
+            Circle CCTP generates an attestation for the cross-chain transfer. Paperwork, but on-chain.
           </li>
           <li>
-            <strong style={{ color: "#c8d8f0", fontWeight: 600 }}>Deliver.</strong>{" "}
-            The attested message is submitted to the destination chain, releasing the equivalent
-            amount to the recipient address.
+            <strong style={{ color: "#c8d8f0", fontWeight: 600 }}>Swap + deliver.</strong>{" "}
+            The USDC arrives on the destination chain, swaps to the target token via Odos, and gets
+            delivered to the user. No drama, just tokens.
           </li>
         </ol>
       </Section>
@@ -75,12 +74,12 @@ export default function AboutPage() {
           <TechCard
             name="Odos"
             role="Liquidity routing"
-            description="Aggregates liquidity across multiple DEXs to find the best available swap route for each transfer."
+            description="Aggregates liquidity across DEXs to find the best swap route on each chain."
           />
           <TechCard
             name="Circle CCTP"
             role="Cross-chain settlement"
-            description="Circle's Cross-Chain Transfer Protocol provides the cryptographic attestation layer that enables trustless cross-chain message passing."
+            description="Zero-fee USDC transfer layer that provides the cryptographic attestation between chains."
           />
         </div>
       </Section>
@@ -88,22 +87,14 @@ export default function AboutPage() {
       <Divider />
 
       {/* Supported networks */}
-      <Section title="Supported networks">
+      <Section title="Supported today">
         <p style={{ marginBottom: 12 }}>
-          BridgX currently supports transfers between the following Ethereum L2 networks:
+          Live now (hackathon MVP, no cap):
         </p>
         <ul style={{ paddingLeft: 18, margin: 0, lineHeight: 2, color: "#c8d8f0" }}>
-          <li><span style={{ color: "#0052ff", marginRight: 8 }}>●</span> Base</li>
-          <li><span style={{ color: "#28a0f0", marginRight: 8 }}>●</span> Arbitrum</li>
-          <li><span style={{ color: "#ff0420", marginRight: 8 }}>●</span> Optimism</li>
+          <li><span style={{ color: "#ff0420", marginRight: 8 }}>●</span> Avalanche → Base</li>
+          <li><span style={{ color: "#7a90b8", marginRight: 8 }}>●</span> Tokens: WETH, BTC</li>
         </ul>
-        <p style={{ marginTop: 12 }}>
-          Additional network support is planned. See the{" "}
-          <a href="/roadmap" style={{ color: "#7a90b8", textDecoration: "underline" }}>
-            roadmap
-          </a>{" "}
-          for details.
-        </p>
       </Section>
 
       <Divider />
@@ -111,9 +102,21 @@ export default function AboutPage() {
       {/* Contact */}
       <Section title="Contact">
         <p>
-          For questions, security reports, or partnership inquiries, open an issue on the
-          project repository or reach out to the team directly.
+          For any questions / suggestion /{" "}
+          <span style={{ textDecoration: "line-through" }}>dick</span> cat pictures, contact:
         </p>
+        <ul style={{ paddingLeft: 18, margin: "8px 0 0", lineHeight: 2 }}>
+          <li>
+            <a href="https://www.linkedin.com/in/anton-bogomolov/" style={{ color: "#7a90b8" }}>
+              https://www.linkedin.com/in/anton-bogomolov/
+            </a>
+          </li>
+          <li>
+            <a href="https://www.linkedin.com/in/alkindi-network/" style={{ color: "#7a90b8" }}>
+              https://www.linkedin.com/in/alkindi-network/
+            </a>
+          </li>
+        </ul>
       </Section>
 
       {/* Nav */}
