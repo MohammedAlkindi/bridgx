@@ -1,17 +1,12 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
+import HeaderNav from "../components/HeaderNav";
 
 export const metadata: Metadata = {
   title: "BridgX | BTC Cross-Chain Bridge",
   description: "Seamless BTC cross-chain transfers — fast, minimal, and transparent.",
 };
-
-const NAV_LINKS = [
-  { href: "/", label: "Bridge" },
-  { href: "/about", label: "About" },
-  { href: "/roadmap", label: "Roadmap" },
-] as const;
 
 const FOOTER_NAV = [
   { href: "/about", label: "About" },
@@ -96,24 +91,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                   BridgX
                 </a>
 
-                <nav aria-label="Primary navigation" style={{ display: "flex", alignItems: "center", gap: 2 }}>
-                  {NAV_LINKS.map(({ href, label }) => (
-                    <a
-                      key={href}
-                      href={href}
-                      className="nav-link"
-                      style={{
-                        padding: "5px 11px",
-                        borderRadius: 7,
-                        fontSize: 13.5,
-                        fontWeight: 500,
-                        textDecoration: "none",
-                      }}
-                    >
-                      {label}
-                    </a>
-                  ))}
-                </nav>
+                <HeaderNav />
               </div>
 
             </div>
@@ -160,17 +138,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
               <nav aria-label="Footer navigation" style={{ display: "flex", alignItems: "center", gap: 18 }}>
                 {FOOTER_NAV.map(({ href, label }) => (
-                  <a
+                  <span
                     key={href}
-                    href={href}
-                    className="nav-link"
+                    className="nav-link nav-link-disabled"
                     style={{
                       fontSize: 12,
                       textDecoration: "none",
                     }}
                   >
                     {label}
-                  </a>
+                  </span>
                 ))}
               </nav>
             </div>
