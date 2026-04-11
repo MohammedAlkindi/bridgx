@@ -4,11 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import BridgeWidget from "../components/BridgeWidget";
 import WalletButton from "../components/WalletButton";
-import { getQuote, initiateBridge } from "../lib/api";
+import { getBtcUsdRate, getQuote, initiateBridge } from "../lib/api";
 import { generateMockEvmAddress, isValidEvmAddress, type WalletState } from "../lib/wallet";
 import { SUPPORTED_CHAINS, type QuoteResponse, type SupportedChain } from "../types";
 
 const QUOTE_DEBOUNCE_MS = 600;
+const MOCK_WALLET_BALANCE_SATS = 500_000; // 0.005 BTC — shown when wallet is connected
 
 type FieldErrors = Partial<
   Record<"sourceChain" | "destinationChain" | "amountSats" | "recipientAddress", string>
@@ -61,8 +62,16 @@ export default function HomePage() {
   const [quote, setQuote] = useState<QuoteResponse | undefined>();
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [usdRate, setUsdRate] = useState<number | undefined>();
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fetch BTC/USD rate once on mount; silently ignore failures
+  useEffect(() => {
+    getBtcUsdRate()
+      .then(setUsdRate)
+      .catch(() => undefined);
+  }, []);
 
   const fieldErrors = getFieldErrors(sourceChain, destinationChain, amountSats, recipientAddress);
   const hasErrors = Object.keys(fieldErrors).length > 0;
@@ -118,6 +127,14 @@ export default function HomePage() {
     setQuote(undefined);
     setErrorMessage("");
   }, []);
+
+  const handleSwapChains = useCallback(() => {
+    setSourceChain((prev) => {
+      setDestinationChain(prev);
+      return destinationChain;
+    });
+    setQuote(undefined);
+  }, [destinationChain]);
 
   const handleSubmit = useCallback(async () => {
     if (!wallet.address) {
@@ -183,6 +200,8 @@ export default function HomePage() {
           canSubmit={formComplete && !!quote}
           fieldErrors={hasErrors ? fieldErrors : undefined}
           errorMessage={displayError}
+          walletBalanceSats={wallet.status === "connected" ? MOCK_WALLET_BALANCE_SATS : undefined}
+          usdRate={usdRate}
           onSourceChainChange={(chain) => {
             setSourceChain(chain);
             setQuote(undefined);
@@ -196,6 +215,7 @@ export default function HomePage() {
             setQuote(undefined);
           }}
           onRecipientAddressChange={setRecipientAddress}
+          onSwapChains={handleSwapChains}
           onSubmit={handleSubmit}
         />
 

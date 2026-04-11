@@ -19,10 +19,13 @@ type BridgeWidgetProps = {
   canSubmit?: boolean;
   fieldErrors?: Partial<Record<"sourceChain" | "destinationChain" | "amountSats" | "recipientAddress", string>>;
   errorMessage?: string;
+  walletBalanceSats?: number;
+  usdRate?: number;
   onSourceChainChange: (chain: SupportedChain) => void;
   onDestinationChainChange: (chain: SupportedChain) => void;
   onAmountSatsChange: (amount: string) => void;
   onRecipientAddressChange: (address: string) => void;
+  onSwapChains: () => void;
   onSubmit: () => void;
 };
 
@@ -40,6 +43,14 @@ function formatExpiry(iso: string): string {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
+function satsToUsd(sats: number, usdPerBtc: number): string {
+  return (sats / 1e8 * usdPerBtc).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  });
+}
+
 export default function BridgeWidget({
   sourceChain,
   destinationChain,
@@ -52,18 +63,30 @@ export default function BridgeWidget({
   canSubmit = true,
   fieldErrors,
   errorMessage,
+  walletBalanceSats,
+  usdRate,
   onSourceChainChange,
   onDestinationChainChange,
   onAmountSatsChange,
   onRecipientAddressChange,
+  onSwapChains,
   onSubmit,
 }: BridgeWidgetProps) {
   const isSubmitDisabled = loading || !canSubmit;
 
+  const amountNum = Number(amountSats);
+  const amountUsd = usdRate && amountSats && Number.isFinite(amountNum) && amountNum > 0
+    ? satsToUsd(amountNum, usdRate)
+    : null;
+
+  const balanceUsd = usdRate && walletBalanceSats !== undefined
+    ? satsToUsd(walletBalanceSats, usdRate)
+    : null;
+
   return (
     <section className="w-full rounded-2xl border border-[#29335a] bg-[#121937] p-6 shadow-xl">
       {/* Chain selectors */}
-      <div className="grid grid-cols-[1fr_28px_1fr] items-end gap-2">
+      <div className="grid grid-cols-[1fr_36px_1fr] items-end gap-2">
         <div>
           <label htmlFor="source-chain" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#6b7db3]">
             From
@@ -83,8 +106,17 @@ export default function BridgeWidget({
           )}
         </div>
 
-        <div className="flex justify-center pb-[11px]" aria-hidden="true">
-          <span className="inline-flex items-center justify-center w-[26px] h-[26px] rounded-[7px] border border-[#1e2d5a] bg-[#0d1326] text-[#4a5a8a] text-[13px]">→</span>
+        {/* Swap button */}
+        <div className="flex justify-center pb-[11px]">
+          <button
+            type="button"
+            onClick={onSwapChains}
+            aria-label="Swap chains"
+            title="Swap chains"
+            className="inline-flex items-center justify-center w-[30px] h-[30px] rounded-[7px] border border-[#1e2d5a] bg-[#0d1326] text-[#4a5a8a] text-[15px] hover:border-[#F7931A] hover:text-[#F7931A] transition-colors cursor-pointer"
+          >
+            ⇄
+          </button>
         </div>
 
         <div>
@@ -120,12 +152,37 @@ export default function BridgeWidget({
             placeholder="100000"
             value={amountSats}
             onChange={(e) => onAmountSatsChange(e.target.value)}
-            className="w-full rounded-lg border border-[#263360] bg-[#0f1632] py-2.5 pl-3 pr-16 text-sm text-[#e2e8ff] placeholder-[#4a5a8a] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20"
+            className="w-full rounded-lg border border-[#263360] bg-[#0f1632] py-2.5 pl-3 pr-24 text-sm text-[#e2e8ff] placeholder-[#4a5a8a] focus:border-[#F7931A] focus:outline-none focus:ring-2 focus:ring-[#F7931A]/20"
           />
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-medium text-[#6b7db3]">
-            sats
-          </span>
+          <div className="absolute inset-y-0 right-3 flex items-center gap-2">
+            {walletBalanceSats !== undefined && (
+              <button
+                type="button"
+                onClick={() => onAmountSatsChange(String(walletBalanceSats))}
+                className="text-[10px] font-bold leading-none px-1.5 py-0.5 rounded border border-[#F7931A]/40 text-[#F7931A] hover:bg-[#F7931A]/10 transition-colors"
+              >
+                MAX
+              </button>
+            )}
+            <span className="text-xs font-medium text-[#6b7db3]">sats</span>
+          </div>
         </div>
+
+        {/* Balance + USD hint */}
+        <div className="mt-1.5 flex items-center justify-between text-xs">
+          {walletBalanceSats !== undefined ? (
+            <span className="text-[#4a5a8a]">
+              Balance: <span className="text-[#6b7db3]">{walletBalanceSats.toLocaleString()} sats</span>
+              {balanceUsd && <span className="text-[#4a5a8a]"> ≈ {balanceUsd}</span>}
+            </span>
+          ) : (
+            <span />
+          )}
+          {amountUsd && (
+            <span className="text-[#6b7db3]">≈ {amountUsd}</span>
+          )}
+        </div>
+
         {fieldErrors?.amountSats && (
           <p className="mt-1 text-xs text-red-400">{fieldErrors.amountSats}</p>
         )}
@@ -156,11 +213,17 @@ export default function BridgeWidget({
           <div className="mt-2 space-y-1.5 text-sm">
             <div className="flex justify-between">
               <span className="text-[#9eb3ff]">You send</span>
-              <span className="font-medium text-[#e2e8ff]">{Number(quote.sourceAmountSats).toLocaleString()} sats</span>
+              <span className="font-medium text-[#e2e8ff]">
+                {Number(quote.sourceAmountSats).toLocaleString()} sats
+                {usdRate && <span className="ml-1.5 text-xs text-[#6b7db3]">({satsToUsd(Number(quote.sourceAmountSats), usdRate)})</span>}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-[#9eb3ff]">You receive</span>
-              <span className="font-medium text-emerald-400">{Number(quote.destinationAmountSats).toLocaleString()} sats</span>
+              <span className="font-medium text-emerald-400">
+                {Number(quote.destinationAmountSats).toLocaleString()} sats
+                {usdRate && <span className="ml-1.5 text-xs text-emerald-600">({satsToUsd(Number(quote.destinationAmountSats), usdRate)})</span>}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-[#9eb3ff]">ETA</span>
