@@ -9,15 +9,15 @@ const TERMINAL_STATES = new Set(["COMPLETED", "FAILED", "EXPIRED"]);
 const POLL_INTERVAL_MS = 4000;
 
 const EXPLORER_TX_URLS: Record<SupportedChain, string> = {
+  avalanche: "https://snowtrace.io/tx/",
   base: "https://basescan.org/tx/",
   arbitrum: "https://arbiscan.io/tx/",
-  optimism: "https://optimistic.etherscan.io/tx/",
 };
 
 const CHAIN_LABELS: Record<SupportedChain, string> = {
+  avalanche: "Avalanche",
   base: "Base",
   arbitrum: "Arbitrum",
-  optimism: "Optimism",
 };
 
 function getExplorerUrl(hash: string, chain?: SupportedChain): string | null {

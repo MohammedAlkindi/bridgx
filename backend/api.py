@@ -42,16 +42,26 @@ _KNOWN_TOKENS: Dict[tuple, tuple] = {
     ("TBTC",    8453): ("0x236aa50979d5f3de3bd1eeb40e81137f22ab794b", 18),
     ("USDC",   42161): ("0xaf88d065e77c8cC2239327C5EDb3A432268e5831", 6),
     ("WBTC",   42161): ("0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f", 8),
-    ("USDC",      10): ("0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", 6),
-    ("WBTC",      10): ("0x68f180fcCe6836688e9084f035309E29Bf0A2095", 8),
 }
 
 # Per-chain config for the bridge quote endpoint.
 # Maps frontend chain name -> (chain_id, btc_symbol, usdc_symbol)
 _BRIDGE_CHAIN_CONFIG: Dict[str, tuple] = {
+    "avalanche": (43114, "BTCB", "USDC"),
     "base":      (8453,  "CBBTC", "USDC"),
     "arbitrum":  (42161, "WBTC",  "USDC"),
-    "optimism":  (10,    "WBTC",  "USDC"),
+}
+
+_NETWORKS: List[Dict[str, Any]] = [
+    {"name": "avalanche", "chain_id": 43114, "label": "Avalanche"},
+    {"name": "base", "chain_id": 8453, "label": "Base"},
+    {"name": "arbitrum", "chain_id": 42161, "label": "Arbitrum"},
+]
+
+_CHAIN_RPC_URLS: Dict[int, str] = {
+    43114: "https://api.avax.network/ext/bc/C/rpc",
+    8453: "https://base-rpc.publicnode.com",
+    42161: "https://arb1.arbitrum.io/rpc",
 }
 
 
@@ -98,6 +108,16 @@ class TokenInfo(BaseModel):
     decimals: int
     chain_id: int
     chain_name: Optional[str] = None
+
+
+class NetworkInfo(BaseModel):
+    name: str
+    chain_id: int
+    label: str
+
+
+class TokenBalanceResponse(BaseModel):
+    balance: str
 
 
 class QuoteRequest(BaseModel):
@@ -261,6 +281,53 @@ def get_tokens() -> List[TokenInfo]:
         )
 
     return results
+
+
+@app.get("/networks", response_model=List[NetworkInfo])
+def get_networks() -> List[NetworkInfo]:
+    return [NetworkInfo(**network) for network in _NETWORKS]
+
+
+@app.get("/token-balance", response_model=TokenBalanceResponse)
+def token_balance(token_address: str, wallet_address: str, chain_id: int) -> TokenBalanceResponse:
+    rpc_url = _CHAIN_RPC_URLS.get(chain_id)
+    if rpc_url is None:
+        raise HTTPException(status_code=400, detail="Unsupported chain_id")
+
+    data = "0x70a08231" + wallet_address.lower().replace("0x", "").rjust(64, "0")
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_call",
+        "params": [
+            {
+                "to": token_address,
+                "data": data,
+            },
+            "latest",
+        ],
+    }
+
+    try:
+        response = _requests.post(rpc_url, json=payload, timeout=10)
+        response.raise_for_status()
+        body = response.json()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Token balance fetch failed: {exc}")
+
+    if "error" in body:
+        raise HTTPException(status_code=502, detail="Token balance fetch failed")
+
+    result = body.get("result")
+    if not isinstance(result, str):
+        raise HTTPException(status_code=502, detail="Token balance invalid response")
+
+    try:
+        balance = str(int(result, 16))
+    except Exception:
+        raise HTTPException(status_code=502, detail="Token balance parse failed")
+
+    return TokenBalanceResponse(balance=balance)
 
 
 @app.post("/token-price", response_model=float)

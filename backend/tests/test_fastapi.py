@@ -352,3 +352,94 @@ def test_get_tokens_load_error() -> None:
         mock_tokens.side_effect = RuntimeError("boom")
         response = client.get("/tokens")
     assert response.status_code == 502
+
+
+def test_get_networks_ok() -> None:
+    response = client.get("/networks")
+    assert response.status_code == 200
+    data = response.json()
+    assert any(network["name"] == "avalanche" for network in data)
+    assert any(network["name"] == "base" for network in data)
+    assert any(network["name"] == "arbitrum" for network in data)
+
+
+def test_token_balance_ok() -> None:
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"result": "0x10"}
+
+    with patch("backend.api._requests.post") as mock_post:
+        mock_post.return_value = FakeResponse()
+        response = client.get(
+            "/token-balance",
+            params={
+                "token_address": "0x1234567890abcdef1234567890abcdef12345678",
+                "wallet_address": "0x0000000000000000000000000000000000000001",
+                "chain_id": 43114,
+            },
+        )
+    assert response.status_code == 200
+    assert response.json()["balance"] == "16"
+
+
+def test_token_balance_unsupported_chain() -> None:
+    response = client.get(
+        "/token-balance",
+        params={
+            "token_address": "0x1234567890abcdef1234567890abcdef12345678",
+            "wallet_address": "0x0000000000000000000000000000000000000001",
+            "chain_id": 999,
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_token_balance_rpc_error() -> None:
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"error": {"message": "boom"}}
+
+    with patch("backend.api._requests.post") as mock_post:
+        mock_post.return_value = FakeResponse()
+        response = client.get(
+            "/token-balance",
+            params={
+                "token_address": "0x1234567890abcdef1234567890abcdef12345678",
+                "wallet_address": "0x0000000000000000000000000000000000000001",
+                "chain_id": 43114,
+            },
+        )
+    assert response.status_code == 502
+
+
+def test_token_balance_invalid_result() -> None:
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"result": None}
+
+    with patch("backend.api._requests.post") as mock_post:
+        mock_post.return_value = FakeResponse()
+        response = client.get(
+            "/token-balance",
+            params={
+                "token_address": "0x1234567890abcdef1234567890abcdef12345678",
+                "wallet_address": "0x0000000000000000000000000000000000000001",
+                "chain_id": 43114,
+            },
+        )
+    assert response.status_code == 502
