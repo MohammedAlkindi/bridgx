@@ -3,11 +3,12 @@ import type {
   BridgeInitiateResponse,
   QuoteRequest,
   QuoteResponse,
+  TokenInfo,
   TransferReceiptResponse,
   TransferStatusResponse,
 } from "../types";
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const MOCK_API_ENABLED =
   process.env.NEXT_PUBLIC_USE_MOCK_API === "true" ||
   process.env.NODE_ENV !== "production";
@@ -147,4 +148,16 @@ export async function getBtcUsdRate(): Promise<number> {
   }
   const data = await requestJson<{ usd: number }>("/btc-price");
   return data.usd;
+}
+
+export async function getTokens(): Promise<TokenInfo[]> {
+  if (MOCK_API_ENABLED) {
+    try {
+      return await requestJson<TokenInfo[]>("/tokens");
+    } catch {
+      return [];
+    }
+  }
+
+  return requestJson<TokenInfo[]>("/tokens");
 }
