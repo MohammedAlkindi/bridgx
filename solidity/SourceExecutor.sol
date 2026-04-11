@@ -7,6 +7,8 @@ interface IERC20 {
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
 
     function approve(address spender, uint256 amount) external returns (bool);
+
+    function transfer(address to, uint256 amount) external returns (bool);
 }
 
 interface ITokenMessengerV2 {
@@ -23,6 +25,7 @@ interface ITokenMessengerV2 {
 }
 
 contract SourceExecutor {
+    address public immutable owner;
     address public immutable odosRouter;
     address public immutable usdc;
     address public immutable tokenMessenger;
@@ -35,15 +38,24 @@ contract SourceExecutor {
         bytes32 mintRecipient
     );
 
+    event TokenRescued(address indexed token, address indexed to, uint256 amount);
+    event NativeRescued(address indexed to, uint256 amount);
+
     error ZeroAddress();
     error NativeValueNotAllowed();
     error OdosSwapFailed();
     error UsdcOutZero();
+    error NotOwner();
+    error InvalidRecipient();
+    error RescueFailed();
+    error ERC20CallFailed(address token, bytes4 selector);
+    error ERC20CallReturnedFalse(address token, bytes4 selector);
 
     constructor(address odosRouter_, address usdc_, address tokenMessenger_) {
         if (odosRouter_ == address(0) || usdc_ == address(0) || tokenMessenger_ == address(0)) {
             revert ZeroAddress();
         }
+        owner = msg.sender;
         odosRouter = odosRouter_;
         usdc = usdc_;
         tokenMessenger = tokenMessenger_;
@@ -94,33 +106,75 @@ contract SourceExecutor {
         emit SwapAndBurnExecuted(inputToken, amountIn, usdcOut, destinationDomain, mintRecipient);
     }
 
+    function rescueToken(address token, address to, uint256 amount) external {
+        if (msg.sender != owner) {
+            revert NotOwner();
+        }
+        if (to == address(0)) {
+            revert InvalidRecipient();
+        }
+        _safeTransfer(token, to, amount);
+        emit TokenRescued(token, to, amount);
+    }
+
+    function rescueNative(address payable to, uint256 amount) external {
+        if (msg.sender != owner) {
+            revert NotOwner();
+        }
+        if (to == address(0)) {
+            revert InvalidRecipient();
+        }
+        (bool success, ) = to.call{value: amount}("");
+        if (!success) {
+            revert RescueFailed();
+        }
+        emit NativeRescued(to, amount);
+    }
+
     function _safeTransferFrom(address token, address from, address to, uint256 amount) internal {
-        (bool success, bytes memory returndata) =
-            token.call(abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, amount));
-        _requireCallSuccess(success, returndata, "TRANSFER_FROM_FAILED");
+        _callOptionalReturn(
+            token,
+            IERC20.transferFrom.selector,
+            abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, amount)
+        );
     }
 
     function _forceApprove(address token, address spender, uint256 amount) internal {
-        (bool resetSuccess, bytes memory resetData) =
-            token.call(abi.encodeWithSelector(IERC20.approve.selector, spender, 0));
-        _requireCallSuccess(resetSuccess, resetData, "APPROVE_RESET_FAILED");
+        _callOptionalReturn(
+            token,
+            IERC20.approve.selector,
+            abi.encodeWithSelector(IERC20.approve.selector, spender, 0)
+        );
 
-        (bool success, bytes memory returndata) =
-            token.call(abi.encodeWithSelector(IERC20.approve.selector, spender, amount));
-        _requireCallSuccess(success, returndata, "APPROVE_FAILED");
+        _callOptionalReturn(
+            token,
+            IERC20.approve.selector,
+            abi.encodeWithSelector(IERC20.approve.selector, spender, amount)
+        );
     }
 
-    function _requireCallSuccess(bool success, bytes memory returndata, string memory fallbackReason) internal pure {
+    function _safeTransfer(address token, address to, uint256 amount) internal {
+        _callOptionalReturn(
+            token,
+            IERC20.transfer.selector,
+            abi.encodeWithSelector(IERC20.transfer.selector, to, amount)
+        );
+    }
+
+    function _callOptionalReturn(address token, bytes4 selector, bytes memory data) internal {
+        (bool success, bytes memory returndata) = token.call(data);
         if (!success) {
             if (returndata.length > 0) {
                 assembly {
                     revert(add(returndata, 32), mload(returndata))
                 }
             }
-            revert(fallbackReason);
+            revert ERC20CallFailed(token, selector);
         }
         if (returndata.length > 0) {
-            require(abi.decode(returndata, (bool)), fallbackReason);
+            if (!abi.decode(returndata, (bool))) {
+                revert ERC20CallReturnedFalse(token, selector);
+            }
         }
     }
 }
