@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import BridgeWidget from "../components/BridgeWidget";
 import WalletButton from "../components/WalletButton";
 import { getBtcUsdRate, getQuote, initiateBridge } from "../lib/api";
-import { generateMockEvmAddress, isValidEvmAddress, type WalletState } from "../lib/wallet";
+import { connectMetaMask, isValidEvmAddress, type WalletState } from "../lib/wallet";
 import { SUPPORTED_CHAINS, type QuoteResponse, type SupportedChain } from "../types";
 
 const QUOTE_DEBOUNCE_MS = 600;
@@ -115,11 +115,15 @@ export default function HomePage() {
     };
   }, [sourceChain, destinationChain, amountSats, recipientAddress, wallet.address, formComplete]);
 
-  const handleConnect = useCallback(() => {
+  const handleConnect = useCallback(async () => {
     setWallet({ status: "connecting" });
-    setTimeout(() => {
-      setWallet({ status: "connected", address: generateMockEvmAddress() });
-    }, 600);
+    try {
+      const address = await connectMetaMask();
+      setWallet({ status: "connected", address });
+    } catch (err) {
+      setWallet({ status: "disconnected" });
+      setErrorMessage(err instanceof Error ? err.message : "Failed to connect wallet.");
+    }
   }, []);
 
   const handleDisconnect = useCallback(() => {
