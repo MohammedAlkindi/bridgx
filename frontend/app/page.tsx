@@ -425,13 +425,14 @@ export default function HomePage() {
       return;
     }
 
+    const walletAddress = wallet.address;
     let cancelled = false;
 
     const loadBalance = async () => {
       try {
         const response = await getTokenBalance(
           sourceTokenInfo.address,
-          wallet.address,
+          walletAddress,
           sourceTokenInfo.chain_id,
         );
         const raw = BigInt(response.balance);

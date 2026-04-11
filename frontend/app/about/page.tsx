@@ -29,14 +29,13 @@ export default function AboutPage() {
       {/* What it is */}
       <Section title="What it does">
         <p>
-          BridgX is a generic bridge for swapping assets across multiple networks. The long-term
-          goal is 10+ chains and 100+ tokens. Right now it's a hackathon MVP focused on WETH and
-          wrapped BTC moving from Avalanche to Base (yes, we started small on purpose).
+          BridgX is a generic bridge for swapping assets across multiple networks. Hackathon MVP
+          focused on WETH and wrapped BTC moving from Avalanche to Base, with a clear path to 10+
+          chains and 100+ tokens.
         </p>
         <p style={{ marginTop: 12 }}>
           The core idea is to chain Circle CCTP (zero-fee USDC transfers) with Odos routing for the
-          best swap rates. In internal tests it beats other bridges in ~50% of cases, which is
-          pretty wild for a hackathon build.
+          best swap rates. In internal tests it beats other bridges in ~50% of cases.
         </p>
       </Section>
 
@@ -47,21 +46,20 @@ export default function AboutPage() {
         <ol style={{ paddingLeft: 18, margin: 0, lineHeight: 2 }}>
           <li>
             <strong style={{ color: "#c8d8f0", fontWeight: 600 }}>Quote.</strong>{" "}
-            BridgX queries Odos to compute the optimal swap route and estimated output amount
-            (aka the "find me a better price" step).
+            BridgX queries Odos to compute the optimal swap route and estimated output amount.
           </li>
           <li>
             <strong style={{ color: "#c8d8f0", fontWeight: 600 }}>Swap to USDC.</strong>{" "}
-            The source token is swapped into USDC and burned through CCTP. Magic happens.
+            The source token is swapped into USDC and burned through CCTP.
           </li>
           <li>
             <strong style={{ color: "#c8d8f0", fontWeight: 600 }}>Attest.</strong>{" "}
-            Circle CCTP generates an attestation for the cross-chain transfer. Paperwork, but on-chain.
+            Circle CCTP generates an attestation for the cross-chain transfer.
           </li>
           <li>
             <strong style={{ color: "#c8d8f0", fontWeight: 600 }}>Swap + deliver.</strong>{" "}
             The USDC arrives on the destination chain, swaps to the target token via Odos, and gets
-            delivered to the user. No drama, just tokens.
+            delivered to the user.
           </li>
         </ol>
       </Section>
@@ -89,7 +87,7 @@ export default function AboutPage() {
       {/* Supported networks */}
       <Section title="Supported today">
         <p style={{ marginBottom: 12 }}>
-          Live now (hackathon MVP, no cap):
+          Live now (hackathon MVP):
         </p>
         <ul style={{ paddingLeft: 18, margin: 0, lineHeight: 2, color: "#c8d8f0" }}>
           <li><span style={{ color: "#ff0420", marginRight: 8 }}>●</span> Avalanche → Base</li>
@@ -102,8 +100,7 @@ export default function AboutPage() {
       {/* Contact */}
       <Section title="Contact">
         <p>
-          For any questions / suggestion /{" "}
-          <span style={{ textDecoration: "line-through" }}>dick</span> cat pictures, contact:
+          For questions, suggestions, or partnership inquiries, contact:
         </p>
         <ul style={{ paddingLeft: 18, margin: "8px 0 0", lineHeight: 2 }}>
           <li>
