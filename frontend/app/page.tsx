@@ -662,7 +662,9 @@ export default function HomePage() {
         if (attestation.status === "complete" && attestation.destinationTxHash) {
           break;
         }
-        setBridgeStatus("Waiting for attestation...");
+        const attnStatus = attestation.attestationStatus ? ` (${attestation.attestationStatus})` : "";
+        const attnSource = attestation.attestationSource ? ` via ${attestation.attestationSource}` : "";
+        setBridgeStatus(`Waiting for attestation${attnSource}${attnStatus}...`);
         await sleep(5000);
       }
 
