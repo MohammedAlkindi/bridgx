@@ -1,4 +1,6 @@
 import time
+import uuid
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, Optional
 
@@ -28,6 +30,16 @@ _KNOWN_TOKENS: Dict[tuple, tuple] = {
     ("TBTC",    8453): ("0x236aa50979d5f3de3bd1eeb40e81137f22ab794b", 18),
     ("USDC",   42161): ("0xaf88d065e77c8cC2239327C5EDb3A432268e5831", 6),
     ("WBTC",   42161): ("0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f", 8),
+    ("USDC",      10): ("0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", 6),
+    ("WBTC",      10): ("0x68f180fcCe6836688e9084f035309E29Bf0A2095", 8),
+}
+
+# Per-chain config for the bridge quote endpoint.
+# Maps frontend chain name -> (chain_id, btc_symbol, usdc_symbol)
+_BRIDGE_CHAIN_CONFIG: Dict[str, tuple] = {
+    "base":      (8453,  "CBBTC", "USDC"),
+    "arbitrum":  (42161, "WBTC",  "USDC"),
+    "optimism":  (10,    "WBTC",  "USDC"),
 }
 
 
@@ -68,6 +80,25 @@ class TokenPayload(BaseModel):
 
 
 class QuoteRequest(BaseModel):
+    sourceChain: str = Field(..., description="Source chain name (e.g. 'base')")
+    destinationChain: str = Field(..., description="Destination chain name (e.g. 'arbitrum')")
+    sourceToken: str = Field(default="BTC", description="Source token symbol")
+    destinationToken: str = Field(default="BTC", description="Destination token symbol")
+    amountSats: str = Field(..., description="Amount in satoshis (string)")
+    walletAddress: str = Field(..., description="User wallet address")
+
+
+class QuoteResponse(BaseModel):
+    quoteId: str
+    sourceChain: str
+    destinationChain: str
+    sourceAmountSats: str
+    destinationAmountSats: str
+    estimatedDurationSec: int
+    routeExpiresAt: str
+
+
+class ProviderQuoteRequest(BaseModel):
     amount_in: Decimal = Field(..., description="Amount of input token")
     token_in: TokenPayload
     token_out: TokenPayload
@@ -90,8 +121,79 @@ class OutputAmountRequest(BaseModel):
     slippage_perc: float = Field(default=0.1, description="Max slippage percent")
 
 
-@app.post("/quote", response_model=float)
-def quote(request: QuoteRequest) -> float:
+@app.post("/quote", response_model=QuoteResponse)
+def quote(request: QuoteRequest) -> QuoteResponse:
+    src_config = _BRIDGE_CHAIN_CONFIG.get(request.sourceChain)
+    dst_config = _BRIDGE_CHAIN_CONFIG.get(request.destinationChain)
+    if src_config is None:
+        raise HTTPException(status_code=400, detail=f"Unsupported source chain: {request.sourceChain}")
+    if dst_config is None:
+        raise HTTPException(status_code=400, detail=f"Unsupported destination chain: {request.destinationChain}")
+
+    src_chain_id, src_btc_symbol, src_usdc_symbol = src_config
+    dst_chain_id, dst_btc_symbol, dst_usdc_symbol = dst_config
+
+    src_btc = _lookup_token(src_btc_symbol, src_chain_id)
+    src_usdc = _lookup_token(src_usdc_symbol, src_chain_id)
+    dst_usdc = _lookup_token(dst_usdc_symbol, dst_chain_id)
+    dst_btc = _lookup_token(dst_btc_symbol, dst_chain_id)
+
+    if not all([src_btc, src_usdc, dst_usdc, dst_btc]):
+        raise HTTPException(status_code=500, detail="Token configuration error for requested chains")
+
+    amount_in = Decimal(request.amountSats) / Decimal(10**8)
+
+    token_in = TokenPayload(address=src_btc[0], decimals=src_btc[1], chain_id=src_chain_id)
+    token_med_in = TokenPayload(address=src_usdc[0], decimals=src_usdc[1], chain_id=src_chain_id)
+    token_med_out = TokenPayload(address=dst_usdc[0], decimals=dst_usdc[1], chain_id=dst_chain_id)
+    token_out = TokenPayload(address=dst_btc[0], decimals=dst_btc[1], chain_id=dst_chain_id)
+
+    quote1 = provider.get_quote(
+        amount_in=amount_in,
+        token_in=token_in,
+        token_out=token_med_in,
+        wallet_address=request.walletAddress,
+        slippage_perc=0.1,
+    )
+    if quote1 is None:
+        raise HTTPException(status_code=502, detail="Provider quote (leg 1) failed")
+    out_amounts_1 = quote1.get("outAmounts")
+    if not out_amounts_1:
+        raise HTTPException(status_code=502, detail="Provider quote (leg 1) missing outAmounts")
+    amount_out_usdc = float(out_amounts_1[0]) / 10**token_med_in.decimals
+
+    quote2 = provider.get_quote(
+        amount_in=Decimal(str(amount_out_usdc)),
+        token_in=token_med_out,
+        token_out=token_out,
+        wallet_address=request.walletAddress,
+        slippage_perc=0.1,
+    )
+    if quote2 is None:
+        raise HTTPException(status_code=502, detail="Provider quote (leg 2) failed")
+    out_amounts_2 = quote2.get("outAmounts")
+    if not out_amounts_2:
+        raise HTTPException(status_code=502, detail="Provider quote (leg 2) missing outAmounts")
+
+    destination_btc = float(out_amounts_2[0]) / 10**token_out.decimals
+    destination_sats = str(int(destination_btc * 10**8))
+
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+
+    return QuoteResponse(
+        quoteId=str(uuid.uuid4()),
+        sourceChain=request.sourceChain,
+        destinationChain=request.destinationChain,
+        sourceAmountSats=request.amountSats,
+        destinationAmountSats=destination_sats,
+        estimatedDurationSec=90,
+        routeExpiresAt=expires_at.isoformat(),
+    )
+
+
+@app.post("/provider/quote", response_model=float)
+def provider_quote(request: ProviderQuoteRequest) -> float:
+    """Low-level single-hop quote against the Odos provider."""
     quote_data = provider.get_quote(
         amount_in=request.amount_in,
         token_in=request.token_in,
