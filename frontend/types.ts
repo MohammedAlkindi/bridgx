@@ -62,6 +62,7 @@ export interface AttestationResponse {
   status: "pending" | "complete";
   messageHash?: TxHash;
   destinationTxHash?: TxHash;
+  releaseTxHash?: TxHash;
 }
 
 export interface ReceiptRequest {
