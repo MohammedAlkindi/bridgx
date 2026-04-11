@@ -33,6 +33,7 @@ app.add_middleware(
         "https://bridgx.xyz",
         "https://www.bridgx.xyz",
     ],
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
