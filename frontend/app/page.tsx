@@ -147,6 +147,17 @@ export default function HomePage() {
   const [walletBalanceTokens, setWalletBalanceTokens] = useState<string | undefined>();
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const walletAddressRef = useRef<string | undefined>();
+
+  useEffect(() => {
+    walletAddressRef.current = wallet.address;
+  }, [wallet.address]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const hoverColor = wallet.address ? "#047857" : "#cc7810";
+    document.documentElement.style.setProperty("--nav-link-hover-color", hoverColor);
+  }, [wallet.address]);
 
   useEffect(() => {
     getNetworks()
@@ -204,7 +215,6 @@ export default function HomePage() {
       if (list.length === 0) {
         setWallet({ status: "disconnected" });
         setWalletBalanceTokens(undefined);
-        setQuote(undefined);
         return;
       }
       const address = list[0];
@@ -221,7 +231,6 @@ export default function HomePage() {
     const handleDisconnect = () => {
       setWallet({ status: "disconnected" });
           setWalletBalanceTokens(undefined);
-      setQuote(undefined);
     };
 
     void syncAccounts();
@@ -358,7 +367,7 @@ export default function HomePage() {
 
     setLoading(true);
     setErrorMessage("");
-    const walletAddress = wallet.address ?? "0x0000000000000000000000000000000000000000";
+    const walletAddress = walletAddressRef.current ?? "0x0000000000000000000000000000000000000000";
     try {
       const result = await getQuote({
         sourceChain,
@@ -382,7 +391,6 @@ export default function HomePage() {
     quoteReady,
     sourceChain,
     sourceToken,
-    wallet.address,
   ]);
 
   // Auto-fetch quote whenever the form becomes complete and valid
@@ -423,7 +431,6 @@ export default function HomePage() {
   const handleDisconnect = useCallback(() => {
     setWallet({ status: "disconnected" });
     setWalletBalanceTokens(undefined);
-    setQuote(undefined);
     setErrorMessage("");
   }, []);
 
@@ -546,7 +553,7 @@ export default function HomePage() {
             setQuote(undefined);
           }}
           onSwapChains={handleSwapChains}
-          onSubmit={handleSubmit}
+          onSubmit={wallet.address ? handleSubmit : handleConnect}
         />
 
         {/* Trust badges */}

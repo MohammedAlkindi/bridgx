@@ -115,7 +115,7 @@ export default function BridgeWidget({
   onSwapChains,
   onSubmit,
 }: BridgeWidgetProps) {
-  const isSubmitDisabled = loading || !canSubmit;
+  const isSubmitDisabled = isWalletConnected ? loading || !canSubmit : !canSubmit;
   const amountNum = Number(amountSats);
   const showUsd = tokenUsdPrice !== undefined;
   const amountUsd = showUsd && amountSats && Number.isFinite(amountNum) && amountNum > 0
@@ -155,18 +155,6 @@ export default function BridgeWidget({
               htmlFor="source-chain"
               className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#5a6d9a]"
             >
-              <span
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: "50%",
-                  background: CHAIN_COLORS[sourceChain],
-                  display: "inline-block",
-                  flexShrink: 0,
-                  boxShadow: `0 0 5px ${CHAIN_COLORS[sourceChain]}60`,
-                }}
-                aria-hidden="true"
-              />
               From
             </label>
             <select
@@ -187,14 +175,14 @@ export default function BridgeWidget({
           </div>
 
           {/* Swap button */}
-          <div className="flex justify-center pb-[11px]">
+          <div className="flex items-center justify-center">
             <button
               type="button"
               onClick={onSwapChains}
               aria-label="Swap source and destination chains"
               title="Swap chains"
               className={[
-                "inline-flex items-center justify-center w-[30px] h-[30px] rounded-[8px] border border-[#1e2d5a] bg-[#090e1f] text-[14px] transition-colors cursor-pointer",
+                "inline-flex items-center justify-center w-[38px] h-[38px] rounded-[8px] border border-[#1e2d5a] bg-[#090e1f] text-[14px] transition-colors cursor-pointer",
                 swapAccentClass,
               ]
                 .filter(Boolean)
@@ -210,18 +198,6 @@ export default function BridgeWidget({
               htmlFor="destination-chain"
               className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#5a6d9a]"
             >
-              <span
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: "50%",
-                  background: CHAIN_COLORS[destinationChain],
-                  display: "inline-block",
-                  flexShrink: 0,
-                  boxShadow: `0 0 5px ${CHAIN_COLORS[destinationChain]}60`,
-                }}
-                aria-hidden="true"
-              />
               To
             </label>
             <select
@@ -299,9 +275,45 @@ export default function BridgeWidget({
       <div className="p-5 pt-4 space-y-4">
         {/* Amount */}
         <div>
-          <label htmlFor="amount-sats" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[#5a6d9a]">
-            {amountInLabel}
-          </label>
+          <div className="mb-1.5 flex items-center justify-between">
+            <label htmlFor="amount-sats" className="block text-[11px] font-semibold uppercase tracking-wider text-[#5a6d9a]">
+              {amountInLabel}
+            </label>
+            <button
+              type="button"
+              onClick={onRefreshQuote}
+              disabled={isRefreshDisabled}
+              aria-label="Update the quote"
+              title="Update the quote"
+              className={[
+                `inline-flex items-center justify-center rounded-full p-1 ${accentTextClass}`,
+                isRefreshDisabled ? "cursor-not-allowed opacity-50" : `cursor-pointer ${refreshHoverClass}`,
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              <svg
+                className={["h-7 w-7", loading ? "animate-spin" : ""].filter(Boolean).join(" ")}
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <path
+                  d="M4.5 10.5a7.5 7.5 0 0112.78-5.03L19.5 7.5m0 0V3m0 4.5h-4.5"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M19.5 13.5a7.5 7.5 0 01-12.78 5.03L4.5 16.5m0 0V21m0-4.5h4.5"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
           <div className="relative">
             <input
               id="amount-sats"
@@ -362,47 +374,7 @@ export default function BridgeWidget({
       <div className="border-t border-[#121d3a]" />
 
       {/* ── Quote panel ──────────────────────────────────────────── */}
-      <div className="p-5">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-[#4a5a8a]">
-            Live Quote
-          </p>
-          <button
-            type="button"
-            onClick={onRefreshQuote}
-            disabled={isRefreshDisabled}
-            aria-label="Update the quote"
-            title="Update the quote"
-            className={[
-              `inline-flex items-center justify-center rounded-full p-1 ${accentTextClass}`,
-              isRefreshDisabled ? "cursor-not-allowed opacity-50" : `cursor-pointer ${refreshHoverClass}`,
-            ]
-              .filter(Boolean)
-              .join(" ")}
-          >
-            <svg
-              className={["h-7 w-7", loading ? "animate-spin" : ""].filter(Boolean).join(" ")}
-              viewBox="0 0 24 24"
-              fill="none"
-            >
-              <path
-                d="M4.5 10.5a7.5 7.5 0 0112.78-5.03L19.5 7.5m0 0V3m0 4.5h-4.5"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M19.5 13.5a7.5 7.5 0 01-12.78 5.03L4.5 16.5m0 0V21m0-4.5h4.5"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-        </div>
-
+      <div className="px-5 pb-5 pt-2">
         <div className="rounded-xl border border-[#121d3a] bg-[#090e1f] overflow-hidden">
           {quote ? (
             <div className="divide-y divide-[#121d3a]">
@@ -458,7 +430,7 @@ export default function BridgeWidget({
           type="button"
           onClick={onSubmit}
           disabled={isSubmitDisabled}
-          aria-busy={loading}
+          aria-busy={loading && isWalletConnected}
           className={[
             "w-full rounded-xl px-4 py-3.5 text-[15px] font-semibold text-white transition-colors",
             ctaClasses,
@@ -467,7 +439,7 @@ export default function BridgeWidget({
             .filter(Boolean)
             .join(" ")}
         >
-          {loading ? (
+          {loading && isWalletConnected ? (
             <span className="inline-flex items-center justify-center gap-2">
               <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />

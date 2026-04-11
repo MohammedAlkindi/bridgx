@@ -46,10 +46,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             style={{
               borderBottom: "1px solid #1a2240",
               background: "#0d1326",
-              position: "sticky",
-              top: 0,
-              zIndex: 50,
-              backdropFilter: "blur(8px)",
             }}
           >
             <div
@@ -105,14 +101,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                     <a
                       key={href}
                       href={href}
+                      className="nav-link"
                       style={{
                         padding: "5px 11px",
                         borderRadius: 7,
                         fontSize: 13.5,
                         fontWeight: 500,
-                        color: "#7a90b8",
                         textDecoration: "none",
-                        transition: "color 0.15s",
                       }}
                     >
                       {label}
@@ -182,7 +177,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               }}
             >
               <span style={{ fontSize: 12, color: "#3d5070" }}>
-                © 2025 BridgX &mdash; Powered by{" "}
+                © 2026 BridgX &mdash; Powered by{" "}
                 <span style={{ color: "#4a6080" }}>Odos</span>
                 {" "}&amp;{" "}
                 <span style={{ color: "#4a6080" }}>Circle CCTP</span>
@@ -193,11 +188,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                   <a
                     key={href}
                     href={href}
+                    className="nav-link"
                     style={{
                       fontSize: 12,
-                      color: "#3d5070",
                       textDecoration: "none",
-                      transition: "color 0.15s",
                     }}
                   >
                     {label}
