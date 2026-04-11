@@ -149,20 +149,15 @@ export default function HomePage() {
       <div style={{ maxWidth: 560, margin: "0 auto" }}>
         <div
           style={{
-            marginBottom: 24,
+            marginBottom: 28,
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "flex-end",
+            alignItems: "center",
           }}
         >
-          <div>
-            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: "#f0f4ff" }}>
-              Bridge BTC
-            </h1>
-            <p style={{ margin: "6px 0 0", fontSize: 14, color: "#6b7db3" }}>
-              Powered by Odos &amp; Circle CCTP
-            </p>
-          </div>
+          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: "#f0f4ff", letterSpacing: "-0.5px" }}>
+            Bridge BTC
+          </h1>
           <WalletButton
             status={wallet.status}
             address={wallet.address}
@@ -178,7 +173,7 @@ export default function HomePage() {
           recipientAddress={recipientAddress}
           chainOptions={SUPPORTED_CHAINS}
           quote={quote}
-          ctaLabel="Bridge BTC"
+          ctaLabel="Bridge"
           loading={loading}
           canSubmit={formComplete && !!quote}
           fieldErrors={hasErrors ? fieldErrors : undefined}
@@ -199,22 +194,23 @@ export default function HomePage() {
           onSubmit={handleSubmit}
         />
 
-        <ul
+        <div
           style={{
             marginTop: 28,
             display: "flex",
             justifyContent: "center",
-            gap: 32,
-            listStyle: "none",
-            padding: 0,
+            alignItems: "center",
+            gap: 8,
             fontSize: 12,
             color: "#4a5a8a",
           }}
         >
-          <li>&#10022; 0% bridge fee</li>
-          <li>&#10022; ~2 min settlement</li>
-          <li>&#10022; On-chain proof</li>
-        </ul>
+          <span>0% bridge fee</span>
+          <span style={{ color: "#263360" }}>·</span>
+          <span>~2 min settlement</span>
+          <span style={{ color: "#263360" }}>·</span>
+          <span>On-chain proof</span>
+        </div>
       </div>
     </section>
   );

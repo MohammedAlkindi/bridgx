@@ -51,17 +51,26 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                   textDecoration: "none",
                   fontWeight: 700,
                   fontSize: 20,
-                  letterSpacing: "-0.3px",
+                  letterSpacing: "-0.4px",
                 }}
               >
                 BridgX
               </a>
               <span
                 style={{
+                  color: "#263360",
+                  fontSize: 15,
+                  userSelect: "none",
+                  padding: "0 4px",
+                }}
+              >
+                |
+              </span>
+              <span
+                style={{
                   color: "#4a5a8a",
                   fontSize: 13,
                   fontWeight: 400,
-                  letterSpacing: "0.1px",
                 }}
               >
                 BTC cross-chain bridge
@@ -75,7 +84,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               width: "100%",
               maxWidth: 960,
               margin: "0 auto",
-              padding: "32px 24px 56px",
+              padding: "48px 24px 72px",
             }}
           >
             {children}
