@@ -83,8 +83,8 @@ export default function BridgeWidget({
           )}
         </div>
 
-        <div className="flex justify-center pb-[11px] text-[#4a5a8a]" aria-hidden="true">
-          →
+        <div className="flex justify-center pb-[11px]" aria-hidden="true">
+          <span className="inline-flex items-center justify-center w-[26px] h-[26px] rounded-[7px] border border-[#1e2d5a] bg-[#0d1326] text-[#4a5a8a] text-[13px]">→</span>
         </div>
 
         <div>
@@ -108,7 +108,7 @@ export default function BridgeWidget({
       </div>
 
       {/* Amount input */}
-      <div className="mt-5">
+      <div className="mt-4">
         <label htmlFor="amount-sats" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#6b7db3]">
           Amount (satoshis)
         </label>
@@ -132,7 +132,7 @@ export default function BridgeWidget({
       </div>
 
       {/* Recipient address */}
-      <div className="mt-5">
+      <div className="mt-4">
         <label htmlFor="recipient-address" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[#6b7db3]">
           Recipient address
         </label>
@@ -150,8 +150,8 @@ export default function BridgeWidget({
       </div>
 
       {/* Quote panel */}
-      <div className="mt-5 rounded-xl border border-[#1e2d5a] bg-[#0d1326] p-4">
-        <p className="text-xs font-semibold uppercase tracking-widest text-[#4a5a8a]">Quote</p>
+      <div className="mt-6 rounded-xl border border-[#1e2d5a] bg-[#0d1326] p-4">
+        <p className="text-xs font-semibold uppercase tracking-widest text-[#6b7db3]">Live Quote</p>
         {quote ? (
           <div className="mt-2 space-y-1.5 text-sm">
             <div className="flex justify-between">
@@ -174,13 +174,20 @@ export default function BridgeWidget({
             )}
           </div>
         ) : (
-          <p className="mt-2 text-sm text-[#4a5a8a]">Complete the form to see a live quote.</p>
+          <div className="mt-3 space-y-2">
+            {["You send", "You receive", "ETA"].map((row) => (
+              <div key={row} className="flex items-center justify-between">
+                <span className="text-sm text-[#2e3f6a]">{row}</span>
+                <div className="h-px w-20 rounded-full bg-[#1a2748]" />
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
       {/* Error / info message */}
       {errorMessage && (
-        <div className="mt-4 rounded-lg border border-[#1e2d5a] bg-[#0d1326] px-3 py-2.5 text-sm text-[#7a90b8]">
+        <div className="mt-4 rounded-lg border border-[#1e2d5a] bg-[#0d1326] px-4 py-2.5 text-sm text-[#7a90b8] leading-snug">
           {errorMessage}
         </div>
       )}
@@ -191,17 +198,22 @@ export default function BridgeWidget({
         onClick={onSubmit}
         disabled={isSubmitDisabled}
         aria-busy={loading}
-        className="mt-5 w-full rounded-xl bg-[#F7931A] px-4 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-[#e28512] active:bg-[#cc7810] disabled:cursor-not-allowed disabled:opacity-40"
+        className="mt-6 w-full rounded-xl bg-[#F7931A] px-4 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-[#e28512] active:bg-[#cc7810] disabled:cursor-not-allowed disabled:opacity-50"
       >
         {loading ? (
-          <span className="inline-flex items-center gap-2">
+          <span className="inline-flex items-center justify-center gap-2">
             <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
             </svg>
             Processing…
           </span>
-        ) : ctaLabel}
+        ) : (
+          <span className="inline-flex items-center justify-center gap-2">
+            {ctaLabel}
+            {!isSubmitDisabled && <span aria-hidden="true">→</span>}
+          </span>
+        )}
       </button>
     </section>
   );
