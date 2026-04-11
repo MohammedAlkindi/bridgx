@@ -27,6 +27,8 @@ app.add_middleware(
 # BTC/USD price cache: (price_usd, fetched_at_epoch)
 _btc_price_cache: Optional[tuple] = None
 _BTC_PRICE_CACHE_TTL_S = 60  # refresh at most once per minute
+_TOKEN_PRICE_CACHE: Dict[tuple, tuple] = {}
+_TOKEN_PRICE_CACHE_TTL_S = 60
 
 AVALANCHE_CHAIN_ID = 43114
 
@@ -330,19 +332,57 @@ def token_balance(token_address: str, wallet_address: str, chain_id: int) -> Tok
     return TokenBalanceResponse(balance=balance)
 
 
-@app.post("/token-price", response_model=float)
+def _fetch_token_price(token_address: str, chain_id: int) -> float:
+    key = (chain_id, token_address.lower())
+    now = time.time()
+    cached = _TOKEN_PRICE_CACHE.get(key)
+    if cached is not None and now - cached[1] < _TOKEN_PRICE_CACHE_TTL_S:
+        return cached[0]
+
+    price = provider.get_token_price(
+        token_address=token_address,
+        chain_id=chain_id,
+    )
+    if price is None:
+        if cached is not None:
+            return cached[0]
+        raise HTTPException(status_code=502, detail="Provider token price failed")
+    try:
+        price_value = float(price)
+    except (TypeError, ValueError):
+        if cached is not None:
+            return cached[0]
+        raise HTTPException(status_code=502, detail="Provider token price invalid")
+
+    _TOKEN_PRICE_CACHE[key] = (price_value, now)
+    return price_value
+
+
+@app.post("/provider/token-price", response_model=float)
 def provider_token_price(request: TokenPriceRequest) -> float:
     """Return the USD price for the given token."""
-    price = provider.get_token_price(
+    return _fetch_token_price(
         token_address=request.token_address,
         chain_id=request.chain_id,
     )
-    if price is None:
-        raise HTTPException(status_code=502, detail="Provider token price failed")
-    try:
-        return float(price)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=502, detail="Provider token price invalid")
+
+
+@app.post("/token-price", response_model=float)
+def token_price_post(request: TokenPriceRequest) -> float:
+    """Return the USD price for any ERC20 token (POST)."""
+    return _fetch_token_price(
+        token_address=request.token_address,
+        chain_id=request.chain_id,
+    )
+
+
+@app.get("/token-price", response_model=float)
+def token_price_get(token_address: str, chain_id: int) -> float:
+    """Return the USD price for any ERC20 token (GET)."""
+    return _fetch_token_price(
+        token_address=token_address,
+        chain_id=chain_id,
+    )
 
 
 @app.post("/assemble", response_model=str)

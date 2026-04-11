@@ -187,3 +187,20 @@ export async function getTokenBalance(
     )}&chain_id=${chainId}`,
   );
 }
+
+export async function getTokenPrice(tokenAddress: string, chainId: number): Promise<number> {
+  if (MOCK_API_ENABLED) {
+    try {
+      return await requestJson<number>("/token-price", {
+        method: "POST",
+        body: JSON.stringify({ token_address: tokenAddress, chain_id: chainId }),
+      });
+    } catch {
+      return Number.NaN;
+    }
+  }
+  return requestJson<number>("/token-price", {
+    method: "POST",
+    body: JSON.stringify({ token_address: tokenAddress, chain_id: chainId }),
+  });
+}
