@@ -262,9 +262,9 @@ export default function HomePage() {
         const names = networks
           .map((network: NetworkInfo) => network.name)
           .filter((name): name is SupportedChain => SUPPORTED_CHAINS.includes(name));
-        setChainOptions(names.length ? names : SUPPORTED_CHAINS);
+        setChainOptions(names.length ? names : [...SUPPORTED_CHAINS]);
       })
-      .catch(() => setChainOptions(SUPPORTED_CHAINS));
+      .catch(() => setChainOptions([...SUPPORTED_CHAINS]));
   }, []);
 
   useEffect(() => {
