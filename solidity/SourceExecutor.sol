@@ -71,7 +71,7 @@ contract SourceExecutor {
         uint256 maxFee,
         uint32 minFinalityThreshold,
         bytes calldata hookData
-    ) external {
+    ) external payable {
         if (msg.value != 0) {
             revert NativeValueNotAllowed();
         }
