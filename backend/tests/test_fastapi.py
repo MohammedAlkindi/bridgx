@@ -11,7 +11,7 @@ for path in (BACKEND_DIR, ROOT_DIR):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from backend.fastapi import app
+from backend.api import app
 
 
 client = TestClient(app)
@@ -40,7 +40,7 @@ def output_amount_payload() -> dict:
 
 
 def test_quote_ok() -> None:
-    with patch("backend.fastapi.provider.get_quote") as mock_get_quote:
+    with patch("backend.api.provider.get_quote") as mock_get_quote:
         mock_get_quote.return_value = {"outAmounts": ["1000000"]}
         response = client.post("/quote", json=quote_payload())
     assert response.status_code == 200
@@ -48,7 +48,7 @@ def test_quote_ok() -> None:
 
 
 def test_quote_provider_fail() -> None:
-    with patch("backend.fastapi.provider.get_quote") as mock_get_quote:
+    with patch("backend.api.provider.get_quote") as mock_get_quote:
         mock_get_quote.return_value = None
         response = client.post("/quote", json=quote_payload())
     assert response.status_code == 502
@@ -59,7 +59,7 @@ def test_assemble_ok() -> None:
         "quote": {"pathId": "abc"},
         "wallet_address": "0x0000000000000000000000000000000000000000",
     }
-    with patch("backend.fastapi.provider.assemble") as mock_assemble:
+    with patch("backend.api.provider.assemble") as mock_assemble:
         mock_assemble.return_value = {"data": "0xdeadbeef"}
         response = client.post("/assemble", json=payload)
     assert response.status_code == 200
@@ -71,14 +71,14 @@ def test_assemble_missing_data() -> None:
         "quote": {"pathId": "abc"},
         "wallet_address": "0x0000000000000000000000000000000000000000",
     }
-    with patch("backend.fastapi.provider.assemble") as mock_assemble:
+    with patch("backend.api.provider.assemble") as mock_assemble:
         mock_assemble.return_value = {}
         response = client.post("/assemble", json=payload)
     assert response.status_code == 502
 
 
 def test_output_amount_ok() -> None:
-    with patch("backend.fastapi.provider.get_quote") as mock_get_quote:
+    with patch("backend.api.provider.get_quote") as mock_get_quote:
         mock_get_quote.side_effect = [
             {"outAmounts": ["2000000"]},
             {"outAmounts": ["100000000"]},
@@ -89,21 +89,21 @@ def test_output_amount_ok() -> None:
 
 
 def test_output_amount_quote1_fail() -> None:
-    with patch("backend.fastapi.provider.get_quote") as mock_get_quote:
+    with patch("backend.api.provider.get_quote") as mock_get_quote:
         mock_get_quote.return_value = None
         response = client.post("/output-amount", json=output_amount_payload())
     assert response.status_code == 502
 
 
 def test_output_amount_quote1_missing_outamounts() -> None:
-    with patch("backend.fastapi.provider.get_quote") as mock_get_quote:
+    with patch("backend.api.provider.get_quote") as mock_get_quote:
         mock_get_quote.return_value = {"outAmounts": []}
         response = client.post("/output-amount", json=output_amount_payload())
     assert response.status_code == 502
 
 
 def test_output_amount_quote2_fail() -> None:
-    with patch("backend.fastapi.provider.get_quote") as mock_get_quote:
+    with patch("backend.api.provider.get_quote") as mock_get_quote:
         mock_get_quote.side_effect = [
             {"outAmounts": ["2000000"]},
             None,
@@ -113,7 +113,7 @@ def test_output_amount_quote2_fail() -> None:
 
 
 def test_output_amount_quote2_missing_outamounts() -> None:
-    with patch("backend.fastapi.provider.get_quote") as mock_get_quote:
+    with patch("backend.api.provider.get_quote") as mock_get_quote:
         mock_get_quote.side_effect = [
             {"outAmounts": ["2000000"]},
             {"outAmounts": []},

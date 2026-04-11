@@ -51,6 +51,7 @@ def quote(request: QuoteRequest) -> float:
         raise HTTPException(status_code=502, detail="Provider quote failed")
     return float(quote_data["outAmounts"][0]) / 10**request.token_out.decimals
 
+
 @app.post("/assemble", response_model=str)
 def assemble(request: AssembleRequest) -> str:
     tx = provider.assemble(
