@@ -105,6 +105,11 @@ _SOURCE_EXECUTOR_ADDRESSES: Dict[int, str] = {
     ),
 }
 
+_DESTINATION_EXECUTOR_ADDRESSES: Dict[int, Optional[str]] = {
+    8453: os.getenv("DESTINATION_EXECUTOR_BASE"),
+    42161: os.getenv("DESTINATION_EXECUTOR_ARBITRUM"),
+}
+
 _CCTP_MAX_FEE = int(os.getenv("CCTP_MAX_FEE", "0"))
 _CCTP_MIN_FINALITY_THRESHOLD = int(os.getenv("CCTP_MIN_FINALITY_THRESHOLD", "1000"))
 _CCTP_HOOK_DATA = os.getenv("CCTP_HOOK_DATA", "0x01")
@@ -112,6 +117,7 @@ _CCTP_DESTINATION_CALLER = os.getenv(
     "CCTP_DESTINATION_CALLER",
     "0x0000000000000000000000000000000000000000",
 )
+_DESTINATION_RELEASE_GAS = int(os.getenv("DESTINATION_RELEASE_GAS", "200000"))
 
 _RELAYER_PRIVATE_KEY = os.getenv("RELAYER_PRIVATE_KEY") or os.getenv("DEPLOYER_PRIVATE_KEY")
 _IRIS_BASE_URL = "https://iris-api.circle.com/attestations"
@@ -153,6 +159,35 @@ def _serialize_receipt(receipt: Any) -> Dict[str, Any]:
 def _address_to_bytes32(address: str) -> bytes:
     raw = Web3.to_bytes(hexstr=address)
     return raw.rjust(32, b"\x00")
+
+
+def _encode_contract_call(contract: Any, fn_name: str, args: list) -> str:
+    if hasattr(contract, "encodeABI"):
+        return contract.encodeABI(fn_name=fn_name, args=args)
+    return contract.encode_abi(fn_name, args=args)
+
+
+def _parse_message_for_release(message: Any) -> tuple[str, str, int, int]:
+    message_bytes = Web3.to_bytes(hexstr=message) if isinstance(message, str) else bytes(message)
+    if len(message_bytes) < 148:
+        raise HTTPException(status_code=500, detail="Message too short for CCTP parsing")
+
+    message_body = message_bytes[148:]
+    if len(message_body) < 228:
+        raise HTTPException(status_code=500, detail="Message body too short for burn parsing")
+
+    mint_recipient_bytes = message_body[36:68]
+    mint_recipient = Web3.to_checksum_address(mint_recipient_bytes[-20:])
+
+    amount = int.from_bytes(message_body[68:100], "big")
+    fee_executed = int.from_bytes(message_body[164:196], "big")
+
+    hook_data = message_body[228:]
+    if len(hook_data) < 32:
+        raise HTTPException(status_code=500, detail="Hook data missing in burn message")
+    recipient = Web3.to_checksum_address(hook_data[-20:])
+
+    return mint_recipient, recipient, amount, fee_executed
 
 
 _MESSAGE_TRANSMITTER_ABI: List[Dict[str, Any]] = [
@@ -197,6 +232,19 @@ _SOURCE_EXECUTOR_ABI: List[Dict[str, Any]] = [
         "name": "executeSwapAndBurn",
         "outputs": [],
         "stateMutability": "payable",
+        "type": "function",
+    }
+]
+
+_DESTINATION_EXECUTOR_ABI: List[Dict[str, Any]] = [
+    {
+        "inputs": [
+            {"internalType": "address", "name": "recipient", "type": "address"},
+            {"internalType": "uint256", "name": "amount", "type": "uint256"},
+        ],
+        "name": "release",
+        "outputs": [],
+        "stateMutability": "nonpayable",
         "type": "function",
     }
 ]
@@ -306,8 +354,9 @@ class AttestationRequest(BaseModel):
 
 class AttestationResponse(BaseModel):
     status: str
-    message_hash: Optional[str] = None
-    destination_tx_hash: Optional[str] = None
+    message_hash: Optional[str] = Field(default=None, serialization_alias="messageHash")
+    destination_tx_hash: Optional[str] = Field(default=None, serialization_alias="destinationTxHash")
+    release_tx_hash: Optional[str] = Field(default=None, serialization_alias="releaseTxHash")
 
 
 class ReceiptRequest(BaseModel):
@@ -576,9 +625,13 @@ def assemble(request: AssembleRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="Destination domain not configured")
 
     try:
-        mint_recipient = Web3.to_checksum_address(request.wallet_address)
+        user_recipient = Web3.to_checksum_address(request.wallet_address)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid wallet address")
+
+    destination_executor = _DESTINATION_EXECUTOR_ADDRESSES.get(int(destination_chain_id))
+    if not destination_executor:
+        raise HTTPException(status_code=400, detail="DestinationExecutor not configured for destination chain")
 
     tx = provider.assemble(
         quote=quote_payload,
@@ -604,16 +657,13 @@ def assemble(request: AssembleRequest) -> Dict[str, Any]:
         int(input_amount_base),
         Web3.to_bytes(hexstr=odos_data),
         int(destination_domain),
-        _address_to_bytes32(mint_recipient),
+        _address_to_bytes32(Web3.to_checksum_address(destination_executor)),
         _address_to_bytes32(_CCTP_DESTINATION_CALLER),
         _CCTP_MAX_FEE,
         _CCTP_MIN_FINALITY_THRESHOLD,
-        Web3.to_bytes(hexstr=_CCTP_HOOK_DATA),
+        _address_to_bytes32(user_recipient),
     ]
-    if hasattr(executor_contract, "encodeABI"):
-        data = executor_contract.encodeABI(fn_name="executeSwapAndBurn", args=args)
-    else:
-        data = executor_contract.encode_abi("executeSwapAndBurn", args=args)
+    data = _encode_contract_call(executor_contract, "executeSwapAndBurn", args)
 
     return {
         "to": source_executor_checksum,
@@ -699,6 +749,10 @@ def attestation(request: AttestationRequest) -> AttestationResponse:
             raise HTTPException(status_code=502, detail="MessageSent event not found in receipt")
 
         message = message_events[0]["args"]["message"]
+        mint_recipient, release_recipient, amount, fee_executed = _parse_message_for_release(message)
+        if amount <= fee_executed:
+            raise HTTPException(status_code=400, detail="Invalid burn amount for release")
+
         message_hash = Web3.keccak(message).hex()
         if not message_hash.startswith("0x"):
             message_hash = f"0x{message_hash}"
@@ -740,14 +794,23 @@ def attestation(request: AttestationRequest) -> AttestationResponse:
         attestation_bytes = Web3.to_bytes(hexstr=attestation_value)
         receive_fn = dest_transmitter.functions.receiveMessage(message, attestation_bytes)
 
+        destination_executor = _DESTINATION_EXECUTOR_ADDRESSES.get(destination_chain_id)
+        if not destination_executor:
+            raise HTTPException(status_code=400, detail="DestinationExecutor not configured for destination chain")
+
+        destination_executor_checksum = Web3.to_checksum_address(destination_executor)
+        if destination_executor_checksum.lower() != mint_recipient.lower():
+            raise HTTPException(status_code=400, detail="Mint recipient does not match DestinationExecutor")
+
         gas_estimate = receive_fn.estimate_gas({"from": relayer.address})
         latest_block = dest_w3.eth.get_block("latest")
         priority_fee = dest_w3.eth.max_priority_fee
         base_fee = latest_block.get("baseFeePerGas")
 
+        base_nonce = dest_w3.eth.get_transaction_count(relayer.address, "pending")
         tx_params: Dict[str, Any] = {
             "from": relayer.address,
-            "nonce": dest_w3.eth.get_transaction_count(relayer.address),
+            "nonce": base_nonce,
             "chainId": destination_chain_id,
             "gas": int(gas_estimate * 1.2),
         }
@@ -763,10 +826,39 @@ def attestation(request: AttestationRequest) -> AttestationResponse:
 
         logger.info("receiveMessage tx sent: %s", destination_tx_hash)
 
+        release_contract = dest_w3.eth.contract(
+            address=destination_executor_checksum,
+            abi=_DESTINATION_EXECUTOR_ABI,
+        )
+        release_data = _encode_contract_call(
+            release_contract,
+            "release",
+            [release_recipient, amount - fee_executed],
+        )
+        release_tx_params: Dict[str, Any] = {
+            "from": relayer.address,
+            "to": destination_executor_checksum,
+            "data": release_data,
+            "nonce": base_nonce + 1,
+            "chainId": destination_chain_id,
+            "gas": _DESTINATION_RELEASE_GAS,
+            "value": 0,
+        }
+        if base_fee is not None:
+            release_tx_params["maxPriorityFeePerGas"] = priority_fee
+            release_tx_params["maxFeePerGas"] = base_fee * 2 + priority_fee
+        else:
+            release_tx_params["gasPrice"] = dest_w3.eth.gas_price
+
+        release_signed = relayer.sign_transaction(release_tx_params)
+        release_tx_hash = dest_w3.eth.send_raw_transaction(release_signed.raw_transaction).hex()
+        logger.info("release tx sent: %s", release_tx_hash)
+
         return AttestationResponse(
             status="complete",
             message_hash=message_hash,
             destination_tx_hash=destination_tx_hash,
+            release_tx_hash=release_tx_hash,
         )
     except HTTPException:
         raise
