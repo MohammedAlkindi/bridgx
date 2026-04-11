@@ -39,6 +39,18 @@ export interface AssembleRequest {
   walletAddress: string;
 }
 
+export interface SwapIntentRequest {
+  sourceTxHash: TxHash;
+  destinationChain: SupportedChain;
+  recipient: string;
+  tokenAddress: string;
+  tokenDecimals: number;
+}
+
+export interface SwapIntentResponse {
+  status: string;
+}
+
 export interface AssembledTransaction {
   to: string;
   data: string;
@@ -68,6 +80,8 @@ export interface AttestationResponse {
   releaseStatus?: string;
   releaseBalance?: string;
   releaseNeeded?: string;
+  swapTxHash?: TxHash;
+  swapStatus?: string;
 }
 
 export interface ReceiptRequest {
