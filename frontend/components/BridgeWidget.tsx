@@ -13,7 +13,6 @@ type BridgeWidgetProps = {
   sourceToken: string;
   destinationToken: string;
   amountSats: string;
-  outputAmount?: number;
   chainOptions: readonly SupportedChain[];
   sourceTokenOptions: readonly TokenInfo[];
   destinationTokenOptions: readonly TokenInfo[];
@@ -28,7 +27,6 @@ type BridgeWidgetProps = {
   errorMessage?: string;
   walletBalanceTokens?: string;
   tokenUsdPrice?: number;
-  destinationTokenUsdPrice?: number;
   onSourceChainChange: (chain: SupportedChain) => void;
   onDestinationChainChange: (chain: SupportedChain) => void;
   onSourceTokenChange: (token: string) => void;
@@ -89,19 +87,12 @@ function formatScaledAmount(amountScaled: string): string {
   }
 }
 
-function formatTokenAmount(amount: number, maxDecimals = 6): string {
-  return amount.toLocaleString("en-US", {
-    maximumFractionDigits: maxDecimals,
-  });
-}
-
 export default function BridgeWidget({
   sourceChain,
   destinationChain,
   sourceToken,
   destinationToken,
   amountSats,
-  outputAmount,
   chainOptions,
   sourceTokenOptions,
   destinationTokenOptions,
@@ -114,7 +105,6 @@ export default function BridgeWidget({
   errorMessage,
   walletBalanceTokens,
   tokenUsdPrice,
-  destinationTokenUsdPrice,
   onSourceChainChange,
   onDestinationChainChange,
   onSourceTokenChange,
@@ -143,23 +133,10 @@ export default function BridgeWidget({
   const destinationQuoteUsd = showUsd && quote && sameToken
     ? tokenToUsd(Number(formatScaledAmount(quote.destinationAmountSats)), tokenUsdPrice!)
     : null;
-  const outputAmountDisplay = outputAmount !== undefined && Number.isFinite(outputAmount)
-    ? formatTokenAmount(outputAmount)
-    : "—";
-  const outputAmountUsd =
-    outputAmount !== undefined &&
-    Number.isFinite(outputAmount) &&
-    destinationTokenUsdPrice !== undefined
-      ? tokenToUsd(outputAmount, destinationTokenUsdPrice)
-      : null;
   const sourceChainLabel = CHAIN_LABELS[sourceChain];
-  const destinationChainLabel = CHAIN_LABELS[destinationChain];
   const amountInLabel = sourceToken
     ? `Amount in (${sourceToken} / ${sourceChainLabel})`
     : `Amount in (${sourceChainLabel})`;
-  const amountOutLabel = destinationToken
-    ? `Amount out (${destinationToken} / ${destinationChainLabel})`
-    : `Amount out (${destinationChainLabel})`;
 
   return (
     <section className="w-full rounded-2xl border border-[#1e2a4a] bg-[#0f1630] shadow-xl" style={{ overflow: "hidden" }}>
@@ -255,21 +232,11 @@ export default function BridgeWidget({
           </div>
         </div>
 
-      {/* Asset indicator */}
-      <div className="mt-3 flex justify-center">
-        <span
-          className="inline-flex items-center gap-2 rounded-md border border-[#1e2d5a] bg-[#090e1f] px-2.5 py-1 text-[11px] font-medium text-[#4a5a8a]"
-        >
-          <span className="text-[10px] font-bold text-[#F7931A]">Token</span>
-          {tokenBadgeLabel}
-        </span>
-      </div>
-
       {/* Token selectors */}
       <div className="mt-4 grid grid-cols-[1fr_40px_1fr] items-end gap-2">
         <div>
           <label htmlFor="source-token" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[#5a6d9a]">
-            Token in
+            You send
           </label>
           <select
             id="source-token"
@@ -379,19 +346,6 @@ export default function BridgeWidget({
           )}
         </div>
 
-        {/* Amount out */}
-        <div>
-          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[#5a6d9a]">
-            {amountOutLabel}
-          </label>
-          <div className="flex items-center justify-between rounded-lg border border-[#1e2d5a] bg-[#090e1f] px-3 py-2.5 text-sm text-[#e2e8ff]">
-            <span>{outputAmountDisplay}</span>
-            <span className="text-xs font-medium text-[#4a5a8a]">{destinationToken || "token"}</span>
-          </div>
-          {outputAmountUsd && (
-            <p className="mt-1 text-xs text-[#5a6d9a]">≈ {outputAmountUsd}</p>
-          )}
-        </div>
       </div>
 
       {/* Divider */}
