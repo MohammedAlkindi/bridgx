@@ -27,6 +27,9 @@ type BridgeWidgetProps = {
   errorMessage?: string;
   walletBalanceTokens?: string;
   tokenUsdPrice?: number;
+  destinationTokenUsdPrice?: number;
+  onRefreshQuote: () => void;
+  canRefresh?: boolean;
   onSourceChainChange: (chain: SupportedChain) => void;
   onDestinationChainChange: (chain: SupportedChain) => void;
   onSourceTokenChange: (token: string) => void;
@@ -48,14 +51,6 @@ const CHAIN_COLORS: Record<SupportedChain, string> = {
   base: "#0052ff",
   arbitrum: "#28a0f0",
 };
-
-function formatExpiry(iso: string): string {
-  const diff = Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 1000));
-  if (diff <= 0) return "Expired";
-  const m = Math.floor(diff / 60);
-  const s = diff % 60;
-  return m > 0 ? `${m}m ${s}s` : `${s}s`;
-}
 
 function tokenToUsd(amount: number, usdPerToken: number): string {
   return (amount * usdPerToken).toLocaleString("en-US", {
@@ -105,6 +100,9 @@ export default function BridgeWidget({
   errorMessage,
   walletBalanceTokens,
   tokenUsdPrice,
+  destinationTokenUsdPrice,
+  onRefreshQuote,
+  canRefresh = true,
   onSourceChainChange,
   onDestinationChainChange,
   onSourceTokenChange,
@@ -114,29 +112,22 @@ export default function BridgeWidget({
   onSubmit,
 }: BridgeWidgetProps) {
   const isSubmitDisabled = loading || !canSubmit;
-  const tokenBadgeLabel = sourceToken
-    ? destinationToken && destinationToken !== sourceToken
-      ? `${sourceToken} → ${destinationToken}`
-      : sourceToken
-    : "Select token";
-
   const amountNum = Number(amountSats);
   const showUsd = tokenUsdPrice !== undefined;
   const amountUsd = showUsd && amountSats && Number.isFinite(amountNum) && amountNum > 0
     ? tokenToUsd(amountNum, tokenUsdPrice!)
     : null;
-
-  const sameToken = destinationToken === sourceToken;
-  const sourceQuoteUsd = showUsd && quote
-    ? tokenToUsd(Number(formatScaledAmount(quote.sourceAmountSats)), tokenUsdPrice!)
-    : null;
-  const destinationQuoteUsd = showUsd && quote && sameToken
-    ? tokenToUsd(Number(formatScaledAmount(quote.destinationAmountSats)), tokenUsdPrice!)
-    : null;
+  const destinationQuoteUsd =
+    quote && destinationTokenUsdPrice !== undefined
+      ? tokenToUsd(Number(formatScaledAmount(quote.destinationAmountSats)), destinationTokenUsdPrice)
+      : null;
   const sourceChainLabel = CHAIN_LABELS[sourceChain];
+  const destinationChainLabel = CHAIN_LABELS[destinationChain];
   const amountInLabel = sourceToken
-    ? `Amount in (${sourceToken} / ${sourceChainLabel})`
-    : `Amount in (${sourceChainLabel})`;
+    ? `You send (${sourceToken} / ${sourceChainLabel})`
+    : `You send (${sourceChainLabel})`;
+  const receiveLabel = `You receive on ${destinationChainLabel}`;
+  const isRefreshDisabled = !canRefresh || loading;
 
   return (
     <section className="w-full rounded-2xl border border-[#1e2a4a] bg-[#0f1630] shadow-xl" style={{ overflow: "hidden" }}>
@@ -307,7 +298,7 @@ export default function BridgeWidget({
                 <button
                   type="button"
                   onClick={() => onAmountSatsChange(String(walletBalanceTokens))}
-                  className="text-[10px] font-bold leading-none px-1.5 py-0.5 rounded border border-[#F7931A]/30 text-[#F7931A] hover:bg-[#F7931A]/10 transition-colors"
+                  className="text-[10px] font-bold leading-none px-1.5 py-0.5 rounded border border-emerald-400/40 text-emerald-400 hover:bg-emerald-400/10 transition-colors"
                 >
                   MAX
                 </button>
@@ -357,30 +348,47 @@ export default function BridgeWidget({
           <p className="text-[11px] font-semibold uppercase tracking-widest text-[#4a5a8a]">
             Live Quote
           </p>
-          {loading && (
-            <svg className="h-3.5 w-3.5 animate-spin text-[#F7931A]" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+          <button
+            type="button"
+            onClick={onRefreshQuote}
+            disabled={isRefreshDisabled}
+            aria-label="Update the quote"
+            title="Update the quote"
+            className={[
+              "inline-flex items-center justify-center rounded-full p-1 text-emerald-400",
+              isRefreshDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:text-emerald-300",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            <svg
+              className={["h-7 w-7", loading ? "animate-spin" : ""].filter(Boolean).join(" ")}
+              viewBox="0 0 24 24"
+              fill="none"
+            >
+              <path
+                d="M4.5 10.5a7.5 7.5 0 0112.78-5.03L19.5 7.5m0 0V3m0 4.5h-4.5"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M19.5 13.5a7.5 7.5 0 01-12.78 5.03L4.5 16.5m0 0V21m0-4.5h4.5"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
-          )}
+          </button>
         </div>
 
         <div className="rounded-xl border border-[#121d3a] bg-[#090e1f] overflow-hidden">
           {quote ? (
             <div className="divide-y divide-[#121d3a]">
               <div className="flex justify-between items-center px-4 py-2.5">
-                <span className="text-sm text-[#5a6d9a]">You send</span>
-                <span className="text-sm font-medium text-[#e2e8ff]">
-                  {formatScaledAmount(quote.sourceAmountSats)} {sourceToken || ""}
-                  {sourceQuoteUsd && (
-                    <span className="ml-1.5 text-xs text-[#4a5a8a]">
-                      ({sourceQuoteUsd})
-                    </span>
-                  )}
-                </span>
-              </div>
-              <div className="flex justify-between items-center px-4 py-2.5">
-                <span className="text-sm text-[#5a6d9a]">You receive</span>
+                <span className="text-sm text-[#5a6d9a]">{receiveLabel}</span>
                 <span className="text-sm font-medium text-emerald-400">
                   {formatScaledAmount(quote.destinationAmountSats)} {destinationToken || ""}
                   {destinationQuoteUsd && (
@@ -392,20 +400,12 @@ export default function BridgeWidget({
               </div>
               <div className="flex justify-between items-center px-4 py-2.5">
                 <span className="text-sm text-[#5a6d9a]">Estimated time</span>
-                <span className="text-sm font-medium text-[#e2e8ff]">
-                  ~{Math.ceil(quote.estimatedDurationSec / 60)} min
-                </span>
+                <span className="text-sm font-medium text-[#e2e8ff]">~10 sec</span>
               </div>
-              {quote.routeExpiresAt && (
-                <div className="flex justify-between items-center px-4 py-2.5">
-                  <span className="text-sm text-[#5a6d9a]">Quote expires</span>
-                  <span className="text-sm font-medium text-amber-400">{formatExpiry(quote.routeExpiresAt)}</span>
-                </div>
-              )}
             </div>
           ) : (
             <div className="divide-y divide-[#0d1428]">
-              {["You send", "You receive", "Estimated time"].map((row) => (
+              {[receiveLabel, "Estimated time"].map((row) => (
                 <div key={row} className="flex items-center justify-between px-4 py-2.5">
                   <span className="text-sm text-[#1e2d4a]">{row}</span>
                   <span className="text-sm text-[#1e2d4a]">—</span>
@@ -440,7 +440,7 @@ export default function BridgeWidget({
           onClick={onSubmit}
           disabled={isSubmitDisabled}
           aria-busy={loading}
-          className="w-full rounded-xl bg-[#F7931A] px-4 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-[#e28512] active:bg-[#cc7810] disabled:cursor-not-allowed disabled:opacity-40"
+          className="w-full rounded-xl bg-emerald-400 px-4 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-emerald-500 active:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {loading ? (
             <span className="inline-flex items-center justify-center gap-2">
