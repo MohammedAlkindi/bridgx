@@ -25,8 +25,9 @@
    - Sends approve tx if needed.
    - Calls `POST /assemble`.
    - Sends assembled tx through MetaMask (`eth_sendTransaction`).
+   - Registers destination execution preferences via `POST /swap-intent`.
    - Polls backend `POST /attestation`.
-   - Polls backend `POST /receipt` for destination tx confirmation.
+   - Polls backend `POST /receipt` for destination tx confirmation when a destination hash is available.
 
 ## Important UI constraints
 
@@ -41,8 +42,9 @@
 - `MOCK_API_ENABLED = FORCE_MOCK_API || NODE_ENV !== "production"`
 
 Implications:
-- In local dev, several API calls attempt backend first, then return mocks on failure (`quote`, `bridge/initiate`, bridge status/receipt, token price, etc.).
-- `assembleTx`, `attestation`, and on-chain transaction submission paths still require real backend/chain behavior unless `NEXT_PUBLIC_USE_MOCK_API=true` for assemble.
+- In local dev, several API calls attempt backend first, then return mocks on failure (`quote`, `swap-intent`, `bridge/initiate`, bridge status/receipt, token price, etc.).
+- `attestation`, `/receipt`, and on-chain transaction submission still require real backend/chain behavior for end-to-end settlement.
+- `getBtcUsdRate()` exists in the client and targets `/btc-price`, but the current backend does not implement that endpoint.
 
 ## Environment variables
 
@@ -53,7 +55,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
 NEXT_PUBLIC_USE_MOCK_API=false
 ```
 
-If unset, API base defaults to `http://localhost:8000`.
+If unset, API base defaults to `http://localhost:8001`.
 
 ## Gaps to be aware of
 

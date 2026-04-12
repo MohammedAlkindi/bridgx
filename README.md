@@ -8,10 +8,10 @@ This repository is a prototype, not a production bridge.
 
 What is implemented in code:
 - Frontend UI for wallet connect, chain/token selection, quoting, and transaction submission.
-- Backend quote + transaction assembly + attestation + receipt APIs.
+- Backend quote + transaction assembly + swap-intent + attestation + receipt APIs.
 - Backend integration with Odos quote/assemble APIs and token pricing API.
 - Solidity `SourceExecutor` contract for swap + `depositForBurnWithHook` flow.
-- Backend unit tests for quote/assemble/token/network/balance/token-price endpoints.
+- Backend unit tests for quote/assemble/output-amount/token/network/balance/token-price endpoints.
 
 What is partial or not wired end-to-end:
 - Transfer tracking endpoints used by `/bridge/[id]` (`/bridge/initiate`, `/bridge/{id}/status`, `/bridge/{id}/receipt`) are not implemented in backend.
@@ -32,6 +32,7 @@ BridgX/
 │   ├── libs/provider.py       # Odos API client helpers
 │   ├── libs/token.py          # Token registry helpers
 │   ├── libs/quote_store.py    # SQLite quote storage with TTL
+│   ├── libs/swap_intent_store.py # SQLite swap-intent storage with TTL
 │   └── tests/test_fastapi.py  # API tests
 ├── solidity/
 │   ├── SourceExecutor.sol
@@ -59,7 +60,7 @@ npm install
 npm run dev
 ```
 
-By default, frontend API base is `http://localhost:8000`, so set `frontend/.env.local` if backend runs on `:4000`:
+By default, frontend API base is `http://localhost:8001`, so set `frontend/.env.local` if backend runs on `:4000`:
 
 ```env
 NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
@@ -81,13 +82,24 @@ NEXT_PUBLIC_USE_MOCK_API=false
 - `CCTP_MIN_FINALITY_THRESHOLD`
 - `CCTP_HOOK_DATA`
 - `CCTP_DESTINATION_CALLER`
+- `DESTINATION_EXECUTOR_BASE`
+- `DESTINATION_EXECUTOR_ARBITRUM`
 - `RELAYER_PRIVATE_KEY` (or fallback `DEPLOYER_PRIVATE_KEY`)
 - `ATTESTATION_POLL_ATTEMPTS`
 - `ATTESTATION_POLL_INTERVAL_S`
 - `QUOTE_TTL_S`
 - `QUOTE_DB_PATH`
+- `SWAP_INTENT_TTL_S`
+- `SWAP_INTENT_DB_PATH`
+- `DESTINATION_RELEASE_GAS`
+- `RELEASE_DELAY_CHECKS`
+- `RELEASE_CHECKS_TTL_S`
+- `RECEIVE_RECEIPT_ATTEMPTS`
+- `RECEIVE_RECEIPT_INTERVAL_S`
+- `RELEASE_RECEIPT_ATTEMPTS`
+- `RELEASE_RECEIPT_INTERVAL_S`
 
-Backend loads `.env` from `backend/.env` first, then repo-level `.env`.
+Backend loads `.env` from `backend/.env` when present; otherwise it falls back to repo-level `.env`.
 
 ## Implemented backend API surface
 
@@ -102,6 +114,7 @@ Implemented endpoints:
 - `GET /tokens`
 - `GET /networks`
 - `GET /token-balance`
+- `POST /swap-intent`
 - `POST /attestation`
 - `POST /receipt`
 
@@ -109,13 +122,13 @@ There is no implemented `/btc-price` endpoint in the backend.
 
 ## Frontend behavior that matters for contributors
 
-- Main page executes bridge flow directly via `/quote` -> `/assemble` -> `/attestation` -> `/receipt`.
+- Main page executes bridge flow directly via `/quote` -> `/assemble` -> `eth_sendTransaction` -> `/swap-intent` -> `/attestation` -> `/receipt`.
 - Source chain selector disables Base and Arbitrum as source; UI effectively drives Avalanche as source for submit flow.
 - `MOCK_API_ENABLED` is `true` for non-production builds, so failed API calls often return mock data to keep UI usable during local demos.
 
 ## Limitations
 
-- No persistence for transfer lifecycle beyond quote storage; no durable transfer records or status stream.
+- No persistence for transfer lifecycle beyond quote + swap-intent staging; no durable transfer records or status stream.
 - No auth/rate limiting.
 - No production deployment config, CI pipeline, or contract test suite in this repo.
 - Smart contract and relayer flow have not been presented as audited here.

@@ -8,7 +8,7 @@
    - Transfer tracking page exists at `app/bridge/[id]/page.tsx` but depends on unimplemented backend `/bridge/*` endpoints and mock fallback behavior.
 
 2. **Backend (`backend/api.py`)**
-   - FastAPI service with quote, assemble, attestation, receipt, token, and network endpoints.
+   - FastAPI service with quote, assemble, swap-intent, attestation, receipt, token, and network endpoints.
    - Uses Odos APIs for route quotes and assembly.
    - Uses chain RPC providers and Circle Iris attestation API for CCTP completion flow.
 
@@ -35,6 +35,7 @@ sequenceDiagram
   BE->>Odos: /sor/assemble
   BE-->>FE: tx calldata for SourceExecutor.executeSwapAndBurn
   FE->>User: eth_sendTransaction (MetaMask)
+  FE->>BE: POST /swap-intent (source tx + destination token/recipient)
   FE->>BE: POST /attestation (source tx hash)
   BE->>Iris: poll attestation by message hash
   BE->>Dst: receiveMessage(...) via relayer key
@@ -51,13 +52,14 @@ sequenceDiagram
 ## State and persistence
 
 - Quotes are persisted in SQLite (`backend/db/quotes.db` by default) with TTL purge.
-- No persistent transfer lifecycle store exists.
+- Swap intents are persisted in SQLite (`backend/db/swap_intents.db` by default) and keyed by source tx hash.
+- No persistent transfer lifecycle store exists (no `/bridge/*` transfer records).
 - No queue/worker component exists; attestation polling happens inside API request scope.
 
 ## Reliability boundaries
 
 - API calls depend on live Odos and chain RPC availability.
-- `/attestation` depends on relayer key and Circle Iris API responsiveness.
+- `/attestation` depends on relayer key, Circle Iris API responsiveness, and a prior `/swap-intent` write for destination swap/release metadata.
 - Frontend non-production mode can mask backend gaps by returning mock responses for some calls.
 
 ## Security boundaries visible in code
