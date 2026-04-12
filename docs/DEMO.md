@@ -28,6 +28,7 @@ Optional for UI-only walkthrough:
 4. **Submit bridge transaction**
    - Explain allowance check + approve tx if required.
    - Explain assembled transaction from backend (`POST /assemble`) then wallet submission.
+   - Mention the frontend immediately stores destination routing intent via `POST /swap-intent`.
 
 5. **Show attestation and receipt progression**
    - UI status text should transition through submitting/waiting messages while backend polls Iris and posts destination relay tx.

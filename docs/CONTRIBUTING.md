@@ -42,6 +42,7 @@ Frontend has no configured test script in `package.json` at the time of writing.
 
 High-impact contribution areas based on current gaps:
 - Implement backend `/bridge/*` lifecycle endpoints used by `frontend/app/bridge/[id]/page.tsx`.
+- Add coverage for `/swap-intent` + `/attestation` interaction and swap-intent SQLite TTL behavior.
 - Improve consistency between amount units in frontend input/labeling and backend request fields.
 - Add integration tests for `/attestation` and `/receipt` behavior.
 - Add Solidity test project (Foundry/Hardhat) for `SourceExecutor`.
