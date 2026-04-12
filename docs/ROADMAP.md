@@ -5,7 +5,7 @@ This file distinguishes current implementation from planned work.
 ## Current baseline (implemented)
 
 - Next.js bridge UI with MetaMask integration.
-- FastAPI quote/assemble/attestation/receipt endpoints.
+- FastAPI quote/assemble/swap-intent/attestation/receipt endpoints.
 - Odos quote + assemble integration.
 - Source-side `SourceExecutor` contract for swap-and-burn path.
 - SQLite-backed temporary quote storage.

@@ -2,7 +2,7 @@
 
 Base URL (local default used in docs): `http://localhost:4000`
 
-> Note: frontend defaults to `http://localhost:8000` unless `NEXT_PUBLIC_API_BASE_URL` is set.
+> Note: frontend defaults to `http://localhost:8001` unless `NEXT_PUBLIC_API_BASE_URL` is set.
 
 ## Endpoints
 
@@ -102,13 +102,32 @@ Query params:
 
 Uses direct `eth_call(balanceOf)` against chain RPC URL map in backend.
 
+## `POST /swap-intent`
+
+Stores destination execution intent keyed by source tx hash. This endpoint is used by the main `/` flow after the source transaction is submitted and before attestation polling.
+
+Request fields (snake_case):
+- `source_tx_hash`
+- `destination_chain`
+- `recipient`
+- `token_address`
+- `token_decimals`
+
+Response:
+```json
+{
+  "status": "ok"
+}
+```
+
 ## `POST /attestation`
 
 Flow:
 1. Reads source tx receipt.
-2. Extracts `MessageSent` from source chain `MessageTransmitter`.
-3. Polls Circle Iris attestation API.
-4. If attestation is ready, submits `receiveMessage` tx on destination chain using relayer key.
+2. Extracts `MessageSent` from source chain `MessageTransmitter` (or Circle Iris v2 messages endpoint).
+3. Polls Circle Iris attestation API until attestation is available.
+4. Submits `receiveMessage` tx on destination chain using relayer key.
+5. Uses previously stored `/swap-intent` data to either `releaseUsdc` or call destination `executeSwapAndTransfer`.
 
 Request fields (snake_case):
 - `source_tx_hash`
@@ -116,6 +135,12 @@ Request fields (snake_case):
 - `destination_chain`
 - `poll_attempts` (optional)
 - `poll_interval_s` (optional)
+
+Response highlights:
+- `status`: `pending` or `complete`
+- `messageHash`
+- `destinationTxHash`
+- optional release/swap progress fields: `releaseStatus`, `releaseTxHash`, `swapStatus`, `swapTxHash`
 
 ## `POST /receipt`
 
@@ -138,6 +163,7 @@ These routes are called by `frontend/lib/api.ts` and `/bridge/[id]`, but backend
 - `POST /bridge/initiate`
 - `GET /bridge/{transferId}/status`
 - `GET /bridge/{transferId}/receipt`
+- `GET /btc-price`
 
 In non-production frontend mode, these calls fall back to mock data.
 
