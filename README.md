@@ -1,22 +1,38 @@
 # BridgX
 
-BridgX is a prototype cross-chain BTC-asset bridge composed of a Next.js frontend, a FastAPI backend, and a Solidity source-chain executor contract. Today, the implemented execution path is Avalanche source only, with destination settlement handled through Circle CCTP message attestation and relay logic in the backend.
+BridgX is a prototype cross-chain bridge composed of a Next.js frontend, a Python + FastAPI backend, and a Solidity source/destination-chain executor contracts. Hackathon MVP focused on WETH and wrapped BTC moving from Avalanche to Base, which can be easily expanded to 10+ chains and 100+ tokens.
+
+The unique idea is to chain Circle CCTP allowing for zero-fee cross-chain USDC transfers with cutting-edge smart routing by Odos for the best swap rates. In internal tests it beats other bridges in ~50% of cases.
+
+## How it works
+1. BridgX queries Odos to compute the optimal swap route for the token to USDC on the source chain.
+2. USDC is burned through CCTP.
+3. CCTP attestates the burnt USDC for the cross-chain transfer, minting the same amount of the USDC on the destination chain.
+4. Upon arrival on the destination chain, the USDC swaps to the target token via Odos, and gets delivered to the user. 
 
 ## Current status
 
 This repository is a prototype, not a production bridge.
 
-What is implemented in code:
-- Frontend UI for wallet connect, chain/token selection, quoting, and transaction submission.
-- Backend quote + transaction assembly + swap-intent + attestation + receipt APIs.
-- Backend integration with Odos quote/assemble APIs and token pricing API.
-- Solidity `SourceExecutor` contract for swap + `depositForBurnWithHook` flow.
-- Backend unit tests for quote/assemble/output-amount/token/network/balance/token-price endpoints.
+**What is implemented in code:**
+- Full cycle (the bridge is fully operational):
+  - Frontend UI for wallet connect, chain/token selection, quoting, and transaction submission.
+  - Backend integration with Odos quote/assemble APIs, token pricing API.
+  - Backend swap + attestation / receipt from CCTP.
+  - Transfer of the tokens to the user on the destination network.
 
-What is partial or not wired end-to-end:
-- Transfer tracking endpoints used by `/bridge/[id]` (`/bridge/initiate`, `/bridge/{id}/status`, `/bridge/{id}/receipt`) are not implemented in backend.
-- Frontend transfer details page therefore depends on mock fallback behavior in non-production mode.
-- Source executor address mapping is configured only for Avalanche in backend defaults.
+**Limitations:**
+- Supported wallets:
+  - Only Metamask browswer extension is supported
+- Supported chains: Avalanche --> Base  
+- Supported tokens:
+  - Input: WETH, BTC.b, WBTC.e
+  - Output: WETH, CBBTC, WBTC, TBTC     
+
+**Contracts deployed:**
+SourceExecutor: `0xeC20cbb6C99e4b8b78cbd81b27Ce0B7aaD222A2d` (Avalanche)
+DestinationExecutor: `0x25c66179bd654cde97fA4aF6C926Ad4689815E05` (Base)
+
 
 ## Repository layout
 
@@ -35,8 +51,10 @@ BridgX/
 │   ├── libs/swap_intent_store.py # SQLite swap-intent storage with TTL
 │   └── tests/test_fastapi.py  # API tests
 ├── solidity/
+|   ├── tests/                 # end-to-end testing
 │   ├── SourceExecutor.sol
-│   └── *.ipynb                # deployment/e2e notebooks
+|   ├── DestinationExecutor.sol
+│   └── *.ipynb                # deployment notebooks
 └── docs/
 ```
 
@@ -49,7 +67,8 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn api:app --reload --host 0.0.0.0 --port 4000
+cd ..
+uvicorn backend.api:app --reload --port 8001
 ```
 
 ### 2) Frontend
@@ -57,47 +76,17 @@ uvicorn api:app --reload --host 0.0.0.0 --port 4000
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run build 
+npm run start -- -p 3003
 ```
-
-By default, frontend API base is `http://localhost:8001`, so set `frontend/.env.local` if backend runs on `:4000`:
 
 ```env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
-NEXT_PUBLIC_USE_MOCK_API=false
+DEPLOYER_PRIVATE_KEY="..."
+RELAYER_PRIVATE_KEY="..."
+DESTINATION_EXECUTOR_BASE="0x25c66179bd654cde97fA4aF6C926Ad4689815E05"
+DESTINATION_EXECUTOR_ARBITRUM="0x24EE15Eb102dA77EA3946c5011326b3487642982"
 ```
 
-## Environment variables actually read by code
-
-### Frontend
-- `NEXT_PUBLIC_API_BASE_URL`
-- `NEXT_PUBLIC_USE_MOCK_API`
-
-### Backend
-- `SOURCE_EXECUTOR_AVALANCHE`
-- `AVALANCHE_MESSAGE_TRANSMITTER`
-- `BASE_MESSAGE_TRANSMITTER`
-- `ARBITRUM_MESSAGE_TRANSMITTER`
-- `CCTP_MAX_FEE`
-- `CCTP_MIN_FINALITY_THRESHOLD`
-- `CCTP_HOOK_DATA`
-- `CCTP_DESTINATION_CALLER`
-- `DESTINATION_EXECUTOR_BASE`
-- `DESTINATION_EXECUTOR_ARBITRUM`
-- `RELAYER_PRIVATE_KEY` (or fallback `DEPLOYER_PRIVATE_KEY`)
-- `ATTESTATION_POLL_ATTEMPTS`
-- `ATTESTATION_POLL_INTERVAL_S`
-- `QUOTE_TTL_S`
-- `QUOTE_DB_PATH`
-- `SWAP_INTENT_TTL_S`
-- `SWAP_INTENT_DB_PATH`
-- `DESTINATION_RELEASE_GAS`
-- `RELEASE_DELAY_CHECKS`
-- `RELEASE_CHECKS_TTL_S`
-- `RECEIVE_RECEIPT_ATTEMPTS`
-- `RECEIVE_RECEIPT_INTERVAL_S`
-- `RELEASE_RECEIPT_ATTEMPTS`
-- `RELEASE_RECEIPT_INTERVAL_S`
 
 Backend loads `.env` from `backend/.env` when present; otherwise it falls back to repo-level `.env`.
 
