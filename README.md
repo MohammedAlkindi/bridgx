@@ -12,8 +12,6 @@ The unique idea is to chain Circle CCTP allowing for zero-fee cross-chain USDC t
 
 ## Current status
 
-This repository is a prototype, not a production bridge.
-
 **What is implemented in code:**
 - Full cycle (the bridge is fully operational):
   - Frontend UI for wallet connect, chain/token selection, quoting, and transaction submission.
@@ -27,11 +25,12 @@ This repository is a prototype, not a production bridge.
 - Supported chains: Avalanche --> Base  
 - Supported tokens:
   - Input: WETH, BTC.b, WBTC.e
-  - Output: WETH, CBBTC, WBTC, TBTC     
+  - Output: WETH, CBBTC, WBTC, TBTC
+- No audit :] Use at your own risk! 
 
-**Contracts deployed:**
-SourceExecutor: `0xeC20cbb6C99e4b8b78cbd81b27Ce0B7aaD222A2d` (Avalanche)
-DestinationExecutor: `0x25c66179bd654cde97fA4aF6C926Ad4689815E05` (Base)
+**Contracts deployed:**  
+SourceExecutor: `0xeC20cbb6C99e4b8b78cbd81b27Ce0B7aaD222A2d` (Avalanche)  
+DestinationExecutor: `0x25c66179bd654cde97fA4aF6C926Ad4689815E05` (Base)  
 
 
 ## Repository layout
@@ -80,6 +79,8 @@ npm run build
 npm run start -- -p 3003
 ```
 
+Backend loads `.env` from `backend/.env` when present; otherwise it falls back to repo-level `.env`.
+
 ```env
 DEPLOYER_PRIVATE_KEY="..."
 RELAYER_PRIVATE_KEY="..."
@@ -87,47 +88,15 @@ DESTINATION_EXECUTOR_BASE="0x25c66179bd654cde97fA4aF6C926Ad4689815E05"
 DESTINATION_EXECUTOR_ARBITRUM="0x24EE15Eb102dA77EA3946c5011326b3487642982"
 ```
 
+## Backend FastAPI endpoints
 
-Backend loads `.env` from `backend/.env` when present; otherwise it falls back to repo-level `.env`.
-
-## Implemented backend API surface
-
-Implemented endpoints:
 - `POST /quote`
-- `POST /provider/quote`
 - `POST /assemble`
 - `POST /output-amount`
-- `POST /provider/token-price`
 - `POST /token-price`
-- `GET /token-price`
 - `GET /tokens`
 - `GET /networks`
 - `GET /token-balance`
 - `POST /swap-intent`
 - `POST /attestation`
 - `POST /receipt`
-
-There is no implemented `/btc-price` endpoint in the backend.
-
-## Frontend behavior that matters for contributors
-
-- Main page executes bridge flow directly via `/quote` -> `/assemble` -> `eth_sendTransaction` -> `/swap-intent` -> `/attestation` -> `/receipt`.
-- Source chain selector disables Base and Arbitrum as source; UI effectively drives Avalanche as source for submit flow.
-- `MOCK_API_ENABLED` is `true` for non-production builds, so failed API calls often return mock data to keep UI usable during local demos.
-
-## Limitations
-
-- No persistence for transfer lifecycle beyond quote + swap-intent staging; no durable transfer records or status stream.
-- No auth/rate limiting.
-- No production deployment config, CI pipeline, or contract test suite in this repo.
-- Smart contract and relayer flow have not been presented as audited here.
-
-## Docs index
-
-- [Architecture](docs/ARCHITECTURE.md)
-- [Frontend behavior](docs/FRONTEND.md)
-- [Backend API contract](docs/API_CONTRACT.md)
-- [Smart contracts](docs/SMART_CONTRACTS.md)
-- [Roadmap](docs/ROADMAP.md)
-- [Demo script](docs/DEMO.md)
-- [Contributing](docs/CONTRIBUTING.md)
