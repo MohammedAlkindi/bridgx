@@ -25,3 +25,7 @@ htmlcov/
 .vscode/
 *.swp
 *.swo
+
+next-env.d.ts
+.next/
+*.tsbuildinfo
